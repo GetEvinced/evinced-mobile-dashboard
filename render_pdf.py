@@ -4,7 +4,8 @@ Handles Playwright installation automatically if needed."""
 import asyncio, sys, os, subprocess, glob
 
 BASE    = os.path.dirname(os.path.abspath(__file__))
-OUTPUTS = os.path.join(BASE, "..")  # mnt/outputs/
+OUTPUTS = os.path.join(BASE, "output")  # local: repo/output/  (deployed: mnt/outputs/)
+os.makedirs(OUTPUTS, exist_ok=True)
 
 HTML_PATH = os.path.join(OUTPUTS, "mobile-products-dashboard.html")
 PDF_PATH  = os.path.join(OUTPUTS, "mobile-products-dashboard.pdf")

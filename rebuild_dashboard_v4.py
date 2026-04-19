@@ -20,7 +20,8 @@ import json, csv, os
 from collections import defaultdict
 
 BASE    = os.path.dirname(os.path.abspath(__file__))
-OUTPUTS = os.path.join(BASE, "..")   # dashboard-scripts/../  = mnt/outputs/
+OUTPUTS = os.path.join(BASE, "output")   # local: repo/output/  (deployed: mnt/outputs/)
+os.makedirs(OUTPUTS, exist_ok=True)
 
 # ── Load data ──────────────────────────────────────────────────────────────────
 rows        = json.load(open(os.path.join(BASE, "rows_with_sa.json")))

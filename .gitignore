@@ -9,6 +9,7 @@ hubspot_accounts.json
 zendesk_tickets.json
 
 # Dashboard outputs (generated artifacts)
+output/
 mobile-products-dashboard.html
 mobile-products-dashboard.pdf
 
