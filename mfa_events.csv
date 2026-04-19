@@ -1,0 +1,88 @@
+Feature Name,Category,Events (30d),Visitors (30d),Accounts (30d)
+MFA - Scan Click New (All Scans),Scan,8720,285,37
+MFA - Remove Scan,Scan,2413,162,28
+MFA - Scan Current View ONLY,Scan,868,29,10
+Full Page Scan Button,Scan,187,73,25
+MFA - Scan App Button,Scan,70,25,12
+MFA - Scan click - Old,Scan,0,0,0
+MFA - Delete specific screen scan,Scan,0,0,0
+MFA - Export Report Dropdown,Report,1109,162,26
+MFA - Export Report HTML,Report,841,136,25
+MFA - HTML Export - Entire Session,Report,512,110,21
+MFA - HTML Export - Current Scan,Report,246,47,14
+MFA - Export Report CSV,Report,56,29,10
+MFA - Export Report JSON,Report,53,32,12
+MFA - HTML Export - Selected Issues,Report,1,1,1
+MFA - Connect Button,Connection,2562,310,39
+MFA - Exit Connection,Connection,1300,196,33
+MFA - Connection Icon,Connection,1185,198,31
+MFA - ADB Connect Button,Connection,1060,173,25
+MFA - Choose Wired Connection,Connection,966,189,30
+MFA - Choose Android,Connection,838,162,23
+MFA - IOS Connect Button,Connection,834,157,31
+MFA - Choose IOS,Connection,815,183,33
+MFA - iOS - Choose Simulator,Connection,467,118,25
+MFA - iOS - Choose Real device,Connection,317,84,27
+MFA - Choose Wireless,Connection,252,91,26
+MFA - ADB Connection - Set button,Connection,171,66,21
+MFA - ADB Connection - ADB file browsing,Connection,168,57,18
+MFA - Wireless - IP Address,Connection,85,28,13
+MFA - Switch to Android Connection tab,Connection,57,30,11
+MFA - Switch to iOS connection tab,Connection,28,21,13
+MFA - ADB Connection - Platform Tools Link,Connection,16,13,12
+MFA - Wireless Connection - back to QR Code,Connection,15,7,7
+MFA - Android Companion App Download Link,Connection,2,2,2
+MFA - Copy IP Address for Android,Connection,0,0,0
+MFA - Device Refresh,Connection,0,0,0
+MFA - Start New Session,Session,0,0,0
+MFA - Create New Session (+ icon),Session,0,0,0
+MFA - New Session icon click,Session,0,0,0
+MFA - Remove Session,Session,0,0,0
+MFA - Sync Button,Session,0,0,0
+MFA Session Overview,Session,0,0,0
+MFA - Session Settings,Settings,0,0,0
+MFA - Settings icon click,Settings,0,0,0
+MFA - Auto Sync Checkbox,Settings,0,0,0
+MFA - Auto Sync Checkbox Disable,Settings,0,0,0
+MFA - Support (Main Dashboard),Support,0,0,0
+MFA - Support Main Dashboard,Support,0,0,0
+MFA - Support (Session View),Support,0,0,0
+MFA - Submit support,Support,0,0,0
+MFA - Knowledge Base,Support,0,0,0
+MFA - Automate your testing,Support,0,0,0
+MFA - Android Troubleshooting,Support,0,0,0
+MFA - iOS Troubleshooting,Support,0,0,0
+Mobile Flow Analyzer Release Notes,Support,0,0,0
+MFA - Add to Jira,Integration,0,0,0
+MFA - Add to Azure Button,Integration,0,0,0
+MFA - Create Issue,Integration,0,0,0
+MFA - Create Issue - Other,Integration,0,0,0
+MFA - Highlight Elements,UI / Navigation,0,0,0
+MFA - Issues filter,UI / Navigation,0,0,0
+MFA - Severities filter,UI / Navigation,0,0,0
+MFA - Overview chartview button,UI / Navigation,0,0,0
+MFA - Overview List View Button,UI / Navigation,0,0,0
+MFA Group By Issues,UI / Navigation,0,0,0
+MFA Group By Element,UI / Navigation,0,0,0
+MFA - Zoom In Button,UI / Navigation,0,0,0
+MFA - Zoom Out Button,UI / Navigation,0,0,0
+MFA - Fit to screen Button,UI / Navigation,0,0,0
+MFA - Home Icon Button,UI / Navigation,0,0,0
+MFA - Element badges,UI / Navigation,0,0,0
+MFA - SAT review button,UI / Navigation,0,0,0
+MFA - SAT Done button,UI / Navigation,0,0,0
+MFA - Save button,UI / Navigation,0,0,0
+MFA - Save Comment Button,UI / Navigation,0,0,0
+MFA - Add comment button,UI / Navigation,0,0,0
+MFA - WCAG links,UI / Navigation,0,0,0
+MFA - Switch to UIKit,UI / Navigation,0,0,0
+MFA - Update Download,UI / Navigation,0,0,0
+MFA - Update Remind Me Later,UI / Navigation,0,0,0
+MFA - TestDesktopFeature,UI / Navigation,0,0,0
+MFA Platform - Apply Button,Platform,0,0,0
+MFA Platform Session Name Link,Platform,0,0,0
+MFA Platform - Download CSV Main,Platform,0,0,0
+Hub - Learn More MFA,Hub,0,0,0
+Hub - Open MFA,Hub,0,0,0
+Hub - Download MFA for Mac,Hub,0,0,0
+Hub - Download MFA for Windows,Hub,0,0,0
