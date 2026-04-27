@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Mobile Products Dashboard v5 — fixes on top of v4:
+Mobile Products Dashboard — fixes on top of v4:
 v4 fixes (preserved):
   1. SDK type normalization (ESPRESSO_SDK→Espresso etc.)
   2. Product filter classifies MFA vs SDK correctly
