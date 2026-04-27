@@ -1168,7 +1168,9 @@ applyFilters();
 </body>
 </html>"""
 
-out_path = os.path.join(MNT, "mobile-products-dashboard.html")
+OUTPUT_DIR_ENV = os.environ.get("OUTPUT_DIR") or BASE
+os.makedirs(OUTPUT_DIR_ENV, exist_ok=True)
+out_path = os.path.join(OUTPUT_DIR_ENV, "mobile-products-dashboard.html")
 with open(out_path, "w") as f:
     f.write(html)
 
