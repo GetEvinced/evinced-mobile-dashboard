@@ -1,76 +1,73 @@
 #!/usr/bin/env python3
-"""Fetch rows grouped by all fields including both email AND serviceAccountId."""
-import json, urllib.request, urllib.error, os
-from datetime import datetime, timezone, timedelta
+"""
+Fetch mobile scan data from BigQuery → rows_with_sa.json
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+Replaces the Coralogix fetch. Uses the analytics.scan_success table,
+filtered to MOBILE_SDK and MOBILE_FLOW_ANALYZER products, last 14 days.
 
-API_KEY  = os.environ.get("CORALOGIX_API_KEY", "")
-if not API_KEY:
-    raise EnvironmentError("CORALOGIX_API_KEY environment variable is not set. "
-                           "Copy .env.example to .env and fill in your key.")
-ENDPOINT = "https://ng-api-http.cx498.coralogix.com/api/v1/dataprime/query"
+Authentication: uses Application Default Credentials.
+Run once: gcloud auth application-default login
+Or set: GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+"""
+import json, os
+from google.cloud import bigquery
 
-now = datetime.now(timezone.utc)
-end_time   = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-start_time = (now - timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%SZ")
+BASE    = os.path.dirname(os.path.abspath(__file__))
+PROJECT = "production-267908"
 
-QUERY = """source logs
-| filter $d.eventType == 'MobileAnalysis'
-| groupby $d.tenantName, $d.email, $d.serviceAccountId, $d.sdkType, $d.sdkVariant, $d.sdkVersion, $d.platformName,
-formatTimestamp($m.timestamp, '%F') as date
-  agg count() as scans,
-      sum($d.totalIssues) as total_issues,
-      sum($d.criticalIssues) as critical_issues
-| sortby scans desc
-| limit 5000"""
+client = bigquery.Client(project=PROJECT)
 
-payload = json.dumps({
-    "query": QUERY,
-    "metadata": {"startDate": start_time, "endDate": end_time, "defaultSource": "logs", "tier": "TIER_ARCHIVE"}
-}).encode("utf-8")
+QUERY = """
+SELECT
+  t.name                       AS tenantName,
+  s.owner_id                   AS serviceAccountId,
+  usr.email                    AS email,
+  s.os_name                    AS platformName,
+  sd.type                      AS sdkType,
+  p.name                       AS productName,
+  DATE(s._PARTITIONTIME)       AS date,
+  COUNT(*)                     AS scans
+FROM `production-267908.analytics.scan_success` s
+LEFT JOIN `production-267908.analytics.d_sdk_types` sd  ON s.sdk_type    = sd.id
+LEFT JOIN `production-267908.analytics.d_products`  p   ON p.id          = s.product_name
+LEFT JOIN `production-267908.analytics.tenants`     t   ON s.tenant_id   = t.id
+LEFT JOIN `production-267908.analytics.d_users`     usr ON usr.external_id = s.owner_id
+WHERE DATE(s._PARTITIONTIME) >= DATE_SUB(CURRENT_DATE(), INTERVAL 14 DAY)
+  AND p.name IN ('MOBILE_SDK', 'MOBILE_FLOW_ANALYZER')
+  AND t.name IS NOT NULL AND t.name != ''
+GROUP BY 1, 2, 3, 4, 5, 6, 7
+ORDER BY scans DESC
+LIMIT 5000
+"""
 
-req = urllib.request.Request(ENDPOINT, data=payload,
-    headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json",
-             "Accept": "application/json", "User-Agent": "Mozilla/5.0 (compatible; CoralogixClient/1.0)"},
-    method="POST")
-
-rows = []
-with urllib.request.urlopen(req, timeout=120) as resp:
-    for line in resp:
-        line = line.decode("utf-8").strip()
-        if not line: continue
-        try:
-            obj = json.loads(line)
-            if "result" in obj:
-                for item in obj["result"].get("results", []):
-                    try: rows.append(json.loads(item.get("userData", "{}")))
-                    except: pass
-        except: pass
-
+print("Querying BigQuery…")
+rows = list(client.query(QUERY).result())
 print(f"Got {len(rows)} rows")
+
 normalized = []
 for r in rows:
-    email = r.get("email") or r.get("$d.email")
-    sa_id = r.get("serviceAccountId") or r.get("$d.serviceAccountId")
-    # date from formatTimestamp('%F') is "YYYY-MM-DD"
-    date = r.get("date") or None
+    email = r["email"] if r["email"] and str(r["email"]).lower() not in ("null", "none", "") else None
+    sa_id = r["serviceAccountId"] if r["serviceAccountId"] and str(r["serviceAccountId"]).lower() not in ("null", "none", "") else None
+
+    # For MFA, sdk_type is NULL — use productName to identify it
+    sdk_type = r["sdkType"] or r["productName"] or ""
+
     normalized.append({
-        "tenantName":      r.get("tenantName", ""),
-        "email":           email if email and str(email).lower() not in ("null","none","") else None,
-        "serviceAccountId": sa_id if sa_id and str(sa_id).lower() not in ("null","none","") else None,
-        "sdkType":         r.get("sdkType", ""),
-        "sdkVariant":      r.get("sdkVariant"),
-        "sdkVersion":      r.get("sdkVersion", ""),
-        "platformName":    r.get("platformName", ""),
-        "date":            date,
-        "scans":           int(r.get("scans") or 0),
-        "total_issues":    int(r.get("total_issues") or 0),
-        "critical_issues": int(r.get("critical_issues") or 0),
+        "tenantName":       r["tenantName"] or "",
+        "email":            email,
+        "serviceAccountId": sa_id,
+        "sdkType":          sdk_type,
+        "sdkVariant":       None,   # not available in BigQuery
+        "sdkVersion":       "",     # not available in BigQuery scan_success
+        "platformName":     r["platformName"] or "",
+        "date":             str(r["date"]) if r["date"] else None,
+        "scans":            int(r["scans"] or 0),
+        "total_issues":     0,      # not available in BigQuery
+        "critical_issues":  0,      # not available in BigQuery
     })
 
-sdk = [r for r in normalized if r["sdkType"] != "MFA"]
-mfa = [r for r in normalized if r["sdkType"] == "MFA"]
+sdk = [r for r in normalized if r["sdkType"] != "MOBILE_FLOW_ANALYZER"]
+mfa = [r for r in normalized if r["sdkType"] == "MOBILE_FLOW_ANALYZER"]
 print(f"SDK rows: {len(sdk)}, with email: {sum(1 for r in sdk if r['email'])}, with SA: {sum(1 for r in sdk if r['serviceAccountId'])}")
 print(f"MFA rows: {len(mfa)}, with email: {sum(1 for r in mfa if r['email'])}, with SA: {sum(1 for r in mfa if r['serviceAccountId'])}")
 
