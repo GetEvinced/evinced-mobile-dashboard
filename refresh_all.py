@@ -1,30 +1,29 @@
 #!/usr/bin/env python3
 """
-Mobile Products Dashboard — Daily Refresh Orchestrator
-Runs all 4 steps in sequence, then posts the result to Slack #mobile_analytics.
+Evinced Mobile Dashboard — Full Refresh
+Fetches data from BigQuery, rebuilds HTML dashboard, renders PDF.
 
-Steps:
-  1. fetch_with_sa.py         — pull 14-day Coralogix scan data
-  2. fetch_latest_scan_dates.py — pull per-tenant last-scan timestamps
-  3. rebuild_dashboard_v4.py  — generate HTML dashboard
-  4. render_pdf.py            — render PDF from HTML
+Run from the evinced-dashboard folder:
+    python3 refresh_all.py
 
-After success, posts a summary message + PDF link to Slack #mobile_analytics.
+Prerequisites:
+    pip3 install google-cloud-bigquery playwright --break-system-packages
+    python3 -m playwright install chromium
+    gcloud auth application-default login
 """
-import subprocess, sys, os, json, urllib.request, urllib.error
-from datetime import datetime, timezone
+import subprocess, sys, os, json, urllib.request, urllib.error, urllib.parse
+from dotenv import load_dotenv
 
-BASE    = os.path.dirname(os.path.abspath(__file__))
-OUTPUTS = os.environ.get("OUTPUT_DIR") or os.path.join(BASE, "output")
+load_dotenv()
 
-SLACK_TOKEN   = os.environ.get("SLACK_BOT_TOKEN", "")
-SLACK_CHANNEL = "C0AT76PV6F6"   # #mobile_analytics
+BASE = os.path.dirname(os.path.abspath(__file__))
 
 STEPS = [
-    ("Fetching scan data from Coralogix",       os.path.join(BASE, "fetch_with_sa.py")),
-    ("Fetching latest scan dates",               os.path.join(BASE, "fetch_latest_scan_dates.py")),
-    ("Rebuilding HTML dashboard",                os.path.join(BASE, "rebuild_dashboard_v4.py")),
-    ("Rendering PDF",                            os.path.join(BASE, "render_pdf.py")),
+    ("Fetching scan data from BigQuery",   os.path.join(BASE, "fetch_with_sa.py")),
+    ("Fetching latest scan dates from BQ", os.path.join(BASE, "fetch_latest_scan_dates.py")),
+    ("Fetching Zendesk tickets",           os.path.join(BASE, "fetch_zendesk.py")),
+    ("Rebuilding HTML dashboard",          os.path.join(BASE, "rebuild_dashboard_v5.py")),
+    ("Rendering PDF",                      os.path.join(BASE, "render_pdf.py")),
 ]
 
 def run_step(label, script):
@@ -33,65 +32,78 @@ def run_step(label, script):
     print(f"{'='*60}")
     result = subprocess.run([sys.executable, script], capture_output=False)
     if result.returncode != 0:
-        raise RuntimeError(f"Step failed: {label} (exit {result.returncode})")
+        print(f"❌  {label} FAILED (exit {result.returncode})")
+        sys.exit(result.returncode)
+    print(f"✅  {label} done")
 
-def post_slack(message):
-    if not SLACK_TOKEN:
-        print(f"[Slack] SLACK_BOT_TOKEN not set — skipping post.\nMessage would be:\n{message}")
+def upload_pdf_to_slack(pdf_path):
+    token = os.getenv("SLACK_BOT_TOKEN")
+    channel = os.getenv("SLACK_CHANNEL_ID", "")
+    if not token:
+        print("⚠️  SLACK_BOT_TOKEN not set — skipping Slack upload")
         return
-    payload = json.dumps({"channel": SLACK_CHANNEL, "text": message}).encode("utf-8")
+    if not channel:
+        print("⚠️  SLACK_CHANNEL_ID not set — skipping Slack upload")
+        return
+
+    file_size = os.path.getsize(pdf_path)
+    file_name = os.path.basename(pdf_path)
+
+    # Step 1: get upload URL
+    params = urllib.parse.urlencode({
+        "filename": file_name,
+        "length": file_size
+    })
     req = urllib.request.Request(
-        "https://slack.com/api/chat.postMessage",
-        data=payload,
-        headers={"Authorization": f"Bearer {SLACK_TOKEN}",
-                 "Content-Type": "application/json"},
-        method="POST"
+        f"https://slack.com/api/files.getUploadURLExternal?{params}",
+        headers={"Authorization": f"Bearer {token}"}
     )
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
-            if data.get("ok"):
-                print("[Slack] Message posted ✓")
-            else:
-                print(f"[Slack] Error: {data.get('error')}")
-    except Exception as e:
-        print(f"[Slack] Failed to post: {e}")
+    with urllib.request.urlopen(req) as resp:
+        data = json.loads(resp.read())
+    if not data.get("ok"):
+        print(f"❌  Slack getUploadURLExternal failed: {data}")
+        return
+    upload_url = data["upload_url"]
+    file_id    = data["file_id"]
 
-def main():
-    start = datetime.now(timezone.utc)
-    print(f"\n🔄  Mobile Dashboard Refresh — {start.strftime('%Y-%m-%d %H:%M UTC')}")
+    # Step 2: PUT file
+    with open(pdf_path, "rb") as f:
+        content = f.read()
+    req2 = urllib.request.Request(upload_url, data=content, method="PUT")
+    req2.add_header("Content-Type", "application/pdf")
+    with urllib.request.urlopen(req2) as resp2:
+        resp2.read()
 
-    errors = []
-    for label, script in STEPS:
-        try:
-            run_step(label, script)
-        except RuntimeError as e:
-            errors.append(str(e))
-            print(f"❌  {e}")
-            break
-
-    finish = datetime.now(timezone.utc)
-    elapsed = int((finish - start).total_seconds())
-    today = finish.strftime("%B %d, %Y")
-
-    if errors:
-        msg = (f":x: *Mobile Products Dashboard refresh failed* ({today})\n"
-               f"Error: {errors[0]}\n"
-               f"Duration: {elapsed}s")
+    # Step 3: complete upload
+    payload = json.dumps({
+        "files": [{"id": file_id, "title": file_name}],
+        "channel_id": channel,
+        "initial_comment": "📊 Mobile Products Dashboard — daily refresh"
+    }).encode()
+    req3 = urllib.request.Request(
+        "https://slack.com/api/files.completeUploadExternal",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+    )
+    with urllib.request.urlopen(req3) as resp3:
+        result = json.loads(resp3.read())
+    if result.get("ok"):
+        print(f"✅  PDF uploaded to Slack channel {channel}")
     else:
-        # Read HTML size as a proxy for data freshness
-        html_path = os.path.join(OUTPUTS, "mobile-products-dashboard.html")
-        html_size = os.path.getsize(html_path) // 1024 if os.path.exists(html_path) else 0
-        msg = (f":white_check_mark: *Mobile Products Dashboard refreshed* — {today}\n"
-               f"Data: last 14 days · Coralogix + Pendo\n"
-               f"HTML: {html_size} KB  |  Refresh took {elapsed}s\n"
-               f"Open on internal server: http://localhost:8080/mobile-products-dashboard.html")
-
-    post_slack(msg)
-    print(f"\n{'='*60}")
-    print(f"{'✅  Done' if not errors else '❌  Failed'} in {elapsed}s")
-    print(f"{'='*60}\n")
-    return 1 if errors else 0
+        print(f"❌  Slack completeUpload failed: {result}")
 
 if __name__ == "__main__":
-    sys.exit(main())
+    for label, script in STEPS:
+        run_step(label, script)
+
+    # Optional: send PDF to Slack
+    pdf_path = os.path.join(BASE, "mobile-products-dashboard.pdf")
+    if os.path.exists(pdf_path):
+        upload_pdf_to_slack(pdf_path)
+    else:
+        print(f"\n⚠️  PDF not found at {pdf_path} — skipping Slack upload")
+
+    print("\n🎉  All done! Dashboard refreshed.")
