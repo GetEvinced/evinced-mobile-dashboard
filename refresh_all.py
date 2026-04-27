@@ -22,7 +22,7 @@ STEPS = [
     ("Fetching scan data from BigQuery",   os.path.join(BASE, "fetch_with_sa.py")),
     ("Fetching latest scan dates from BQ", os.path.join(BASE, "fetch_latest_scan_dates.py")),
     ("Fetching Zendesk tickets",           os.path.join(BASE, "fetch_zendesk.py")),
-    ("Rebuilding HTML dashboard",          os.path.join(BASE, "rebuild_dashboard_v5.py")),
+    ("Rebuilding HTML dashboard",          os.path.join(BASE, "rebuild_dashboard_v4.py")),
     ("Rendering PDF",                      os.path.join(BASE, "render_pdf.py")),
 ]
 
