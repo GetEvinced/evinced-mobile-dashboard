@@ -1,68 +1,54 @@
 #!/usr/bin/env python3
-"""Fetch real latest-scan timestamp per tenant from Coralogix → latest_scan_dates.json"""
-import json, urllib.request, os
-from datetime import datetime, timezone, timedelta
+"""
+Fetch latest scan dates per tenant from BigQuery → latest_scan_dates.json
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+Uses the analytics.scan_success table, filtered to mobile products,
+looking back 14 days to find the most recent scan per tenant.
 
-API_KEY  = os.environ.get("CORALOGIX_API_KEY", "")
-if not API_KEY:
-    raise EnvironmentError("CORALOGIX_API_KEY environment variable is not set. "
-                           "Copy .env.example to .env and fill in your key.")
-ENDPOINT = "https://ng-api-http.cx498.coralogix.com/api/v1/dataprime/query"
+Authentication: uses Application Default Credentials.
+Run once: gcloud auth application-default login
+Or set: GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+"""
+import json, os
+from datetime import datetime
+from google.cloud import bigquery
 
-now        = datetime.now(timezone.utc)
-end_time   = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-start_time = (now - timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%SZ")
+BASE    = os.path.dirname(os.path.abspath(__file__))
+PROJECT = "production-267908"
 
-QUERY = """source logs
-| filter $d.eventType == 'MobileAnalysis'
-| groupby $d.tenantName agg max($m.timestamp) as latest_scan
-| limit 500"""
+client = bigquery.Client(project=PROJECT)
 
-payload = json.dumps({
-    "query": QUERY,
-    "metadata": {"startDate": start_time, "endDate": end_time,
-                 "defaultSource": "logs", "tier": "TIER_ARCHIVE"}
-}).encode("utf-8")
+QUERY = """
+SELECT
+  t.name AS tenantName,
+  MAX(s.event_timestamp) AS latest_scan
+FROM `production-267908.analytics.scan_success` s
+LEFT JOIN `production-267908.analytics.tenants`    t ON s.tenant_id    = t.id
+LEFT JOIN `production-267908.analytics.d_products` p ON p.id           = s.product_name
+WHERE DATE(s._PARTITIONTIME) >= DATE_SUB(CURRENT_DATE(), INTERVAL 14 DAY)
+  AND p.name IN ('MOBILE_SDK', 'MOBILE_FLOW_ANALYZER')
+  AND t.name IS NOT NULL AND t.name != ''
+GROUP BY 1
+ORDER BY 1
+"""
 
-req = urllib.request.Request(ENDPOINT, data=payload,
-    headers={"Authorization": f"Bearer {API_KEY}",
-             "Content-Type": "application/json",
-             "Accept": "application/json",
-             "User-Agent": "Mozilla/5.0 (compatible; CoralogixClient/1.0)"},
-    method="POST")
+print("Querying BigQuery for latest scan dates…")
+rows = list(client.query(QUERY).result())
+print(f"Got {len(rows)} tenants")
 
-rows = []
-with urllib.request.urlopen(req, timeout=120) as resp:
-    for line in resp:
-        line = line.decode("utf-8").strip()
-        if not line: continue
-        try:
-            obj = json.loads(line)
-            if "result" in obj:
-                for item in obj["result"].get("results", []):
-                    try: rows.append(json.loads(item.get("userData", "{}")))
-                    except: pass
-        except: pass
-
-print(f"Got {len(rows)} tenant rows")
-
-# Convert nanosecond timestamp → "Mon DD, YYYY"
-dates = {}
+out = {}
 for r in rows:
-    tenant = r.get("tenantName")
-    ts     = r.get("latest_scan")
-    if not tenant or not ts:
-        continue
-    try:
-        dt = datetime.utcfromtimestamp(int(ts) / 1_000_000_000)
-        dates[tenant] = dt.strftime("%b %d, %Y")
-    except Exception as e:
-        print(f"  skip {tenant}: {e}")
+    ts = r["latest_scan"]
+    if ts:
+        # ts is a datetime object from BigQuery
+        if hasattr(ts, 'strftime'):
+            formatted = ts.strftime('%b %-d, %Y')
+        else:
+            dt = datetime.fromisoformat(str(ts))
+            formatted = dt.strftime('%b %-d, %Y')
+        out[r["tenantName"]] = formatted
 
-print(f"Parsed {len(dates)} dates")
-out = os.path.join(BASE, "latest_scan_dates.json")
-with open(out, "w") as f:
-    json.dump(dates, f, indent=2)
-print(f"Saved → {out}")
+path = os.path.join(BASE, "latest_scan_dates.json")
+with open(path, "w") as f:
+    json.dump(out, f, indent=2)
+print(f"Saved {len(out)} tenants to {path}")
