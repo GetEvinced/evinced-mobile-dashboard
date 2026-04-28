@@ -75,9 +75,28 @@ json.dump(types, open(os.path.join(BASE, "zendesk_by_type.json"), "w"), indent=2
 monthly = [{"month": k, "count": v} for k, v in sorted(by_month.items())]
 json.dump(monthly, open(os.path.join(BASE, "zendesk_monthly.json"), "w"), indent=2)
 
+# ── Raw tickets (for dynamic date filtering in dashboard) ─────────────────────
+tickets_out = []
+for t in all_tickets:
+    date_str = (t.get("created_at") or "")[:10]   # YYYY-MM-DD
+    if not date_str:
+        continue
+    text = ((t.get("subject") or "") + " " + (t.get("description") or "")[:200]).lower()
+    has_mfa = "mfa" in text or "mobile flow" in text
+    has_sdk = any(k in text for k in ["sdk", "espresso", "xcui", "appium", "wdio"])
+    ticket_type = "MFA" if has_mfa else ("Mobile SDK" if has_sdk else "General Mobile")
+    tickets_out.append({
+        "created_at":  t.get("created_at", ""),
+        "subject":     t.get("subject", ""),
+        "priority":    t.get("priority") or "normal",
+        "status":      t.get("status", ""),
+        "type":        ticket_type,
+    })
+json.dump(tickets_out, open(os.path.join(BASE, "zendesk_tickets.json"), "w"), indent=2)
+
 # Current month
 cur_month = date.today().strftime("%Y-%m")
 cur_count = by_month.get(cur_month, 0)
-print(f"Saved zendesk_severity.json, zendesk_by_type.json, zendesk_monthly.json")
+print(f"Saved zendesk_severity.json, zendesk_by_type.json, zendesk_monthly.json, zendesk_tickets.json ({len(tickets_out)} tickets)")
 print(f"Current month ({cur_month}): {cur_count} tickets")
 print(f"By status: {dict(status_count)}")
