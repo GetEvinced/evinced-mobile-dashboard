@@ -1,149 +1,85 @@
 #!/usr/bin/env python3
 """
-Mobile Products Dashboard — fixes on top of v4:
-v4 fixes (preserved):
-  1. SDK type normalization (ESPRESSO_SDK→Espresso etc.)
-  2. Product filter classifies MFA vs SDK correctly
-  3. SDK Type + Variant chart
-  4-5. sdkType / sdkVariant normalization
-  6. Accounts table: no Active Users column
-  7. Latest scan: real date from Coralogix
-  8. Users table rendering confirmed
-  9. 10 rows/page with prev/next arrows
-
-v5 fixes:
-  A. Users table: removed Contact Owner, SE, TAM columns (and from CSV export)
-  B. Charts (SDK pie + SDK type+variant bar) now update dynamically on filter change
-  C. Accounts table now applies product AND SDK type filters
+Mobile Products Dashboard v5 — BigQuery edition
+Changes vs v4:
+  1. Last updated date in header
+  2. All "Coralogix" → "BigQuery"
+  3. Date range: 7 / 30 / 60 days + custom
+  4. Zendesk pie chart by severity (loads zendesk_severity.json or uses placeholder)
+  5. Weekend filter (toggle applies to whole dashboard)
+  6. Row highlighting: new tenants (green), renewal (amber), biggest scan drop (red)
+  7. Removed avg issues/scan + critical/scan KPIs
+  8. platformName (os_name) used as SDK "variant"
+  9. Updated query: starts 2025-01-01 (reflected in fetch_with_sa.py)
 """
-import json, csv, os
+import json, os
 from collections import defaultdict
+from datetime import datetime as _dt, date as _date, timedelta as _td
 
-BASE    = os.path.dirname(os.path.abspath(__file__))
-OUTPUTS = os.environ.get("OUTPUT_DIR") or os.path.join(BASE, "output")
-os.makedirs(OUTPUTS, exist_ok=True)
+BASE = os.path.dirname(os.path.abspath(__file__))
+
+def load_json(path, fallback=None):
+    try:
+        return json.load(open(path))
+    except Exception:
+        return fallback
 
 # ── Load data ──────────────────────────────────────────────────────────────────
-rows        = json.load(open(os.path.join(BASE, "rows_with_sa.json")))
-# timeseries_new.json is not produced by any script in this repo; the TIMESERIES
-# JS constant it feeds is declared but unused. Default to {} when absent.
-_ts_path = os.path.join(BASE, "timeseries_new.json")
-timeseries  = json.load(open(_ts_path)) if os.path.exists(_ts_path) else {}
-latest_scan = json.load(open(os.path.join(BASE, "latest_scan_dates.json")))
+MNT_CANDIDATE = os.path.join(BASE, "mnt/evinced-dashboard")
+MNT = MNT_CANDIDATE if os.path.isdir(MNT_CANDIDATE) else BASE
 
-# ── Pendo MFA feature events (CSV) ────────────────────────────────────────────
-PENDO_FOCUS_CATS = ["Scan", "Connection", "Report"]
-_pendo_raw = []
-_pendo_path = os.path.join(BASE, "mfa_events.csv")
-if not os.path.exists(_pendo_path):
-    # fallback: check uploads folder in parent mnt directory
-    _pendo_path = os.path.join(OUTPUTS, "..", "uploads", "mfa_events.csv")
-with open(_pendo_path) as f:
-    for row in csv.DictReader(f):
-        events = int(row["Events (30d)"])
-        if events > 0 and row["Category"] in PENDO_FOCUS_CATS:
-            label = row["Feature Name"].replace("MFA - ", "").replace("MFA ", "")
-            _pendo_raw.append({
-                "feature":  label[:40],   # truncate long names for chart labels
-                "category": row["Category"],
-                "events":   events,
-                "visitors": int(row["Visitors (30d)"]),
-            })
+# Fine-grained user-level rows (last 14 days) — for detail table
+rows = load_json(os.path.join(MNT, "rows_with_sa.json"), [])
 
-# Per-category aggregates
-pendo_cat = {}
-for cat in PENDO_FOCUS_CATS:
-    feats = sorted([r for r in _pendo_raw if r["category"] == cat], key=lambda x: -x["events"])
-    pendo_cat[cat] = {
-        "users":    max((r["visitors"] for r in feats), default=0),  # max visitors = conservative unique-user estimate
-        "events":   sum(r["events"] for r in feats),
-        "features": feats,
-    }
+# 90-day daily aggregated rows — for charts + comparisons
+daily_90d = load_json(os.path.join(MNT, "daily_rows_90d.json"), [])
+
+# Latest scan dates per tenant
+latest_scan = load_json(os.path.join(MNT, "latest_scan_dates.json"), {})
+
+# Zendesk data (live from API)
+zendesk_severity = load_json(os.path.join(MNT, "zendesk_severity.json"), None)
+zendesk_by_type  = load_json(os.path.join(MNT, "zendesk_by_type.json"),  None)
+zendesk_monthly  = load_json(os.path.join(MNT, "zendesk_monthly.json"),  None)
+_zd_tickets_raw  = load_json(os.path.join(MNT, "zendesk_tickets.json"),  [])
+
+LAST_UPDATED = _date.today().strftime("%B %d, %Y")
 
 # ── SDK type normalization ─────────────────────────────────────────────────────
-# Maps raw Coralogix sdkType values to clean display names
 SDK_TYPE_NORM = {
-    # MFA
     "MFA": "MFA", "mfa": "MFA",
     "mobileflowanalyzer": "MFA", "mobile_flow_analyzer": "MFA",
-    # Espresso (Android)
+    "MOBILE_FLOW_ANALYZER": "MFA",
     "ESPRESSO_SDK": "Espresso", "espresso_sdk": "Espresso", "espresso": "Espresso",
-    # WebdriverIO
     "WDIO_MOBILE_SDK": "WebdriverIO", "wdio_mobile_sdk": "WebdriverIO", "wdio": "WebdriverIO",
-    # XCUITest (iOS) — two variants exist in the data
     "XCUISDK": "XCUITest", "xcuisdk": "XCUITest",
     "XCUI_SDK": "XCUITest", "xcui_sdk": "XCUITest",
-    # Appium — Java and Python grouped together
     "APPIUM_JAVA_SDK": "Appium", "appium_java_sdk": "Appium",
     "APPIUM_PYTHON_SDK": "Appium", "appium_python_sdk": "Appium",
     "appium": "Appium",
-    # MCP Server
     "MCP_SERVER_MOBILE": "MCP Server", "mcp_server_mobile": "MCP Server",
 }
 
-# ── SDK variant normalization ──────────────────────────────────────────────────
-SDK_VARIANT_NORM = {
-    "UiAutomator2": "UIAutomator2",
-    "uiautomator2": "UIAutomator2",
-    "UIAutomator2": "UIAutomator2",
-    "XCUITest": "XCUITest",
-    "Android": "Android",
-    "iOS": "iOS",
-}
-
-# SDK types that count as "Mobile SDK" (not MFA)
-SDK_PRODUCT_TYPES = {"Espresso", "WebdriverIO", "XCUITest", "Appium", "MCP Server"}
-
 def norm_sdk_type(s):
     if not s: return "Unknown"
-    return SDK_TYPE_NORM.get(s.strip()) or SDK_TYPE_NORM.get(s.strip().lower()) or s.strip()
-
-def norm_sdk_variant(v):
-    if not v or str(v).lower() in ("null", "none", ""): return None
-    return SDK_VARIANT_NORM.get(str(v).strip()) or str(v).strip()
+    return SDK_TYPE_NORM.get(s.strip()) or SDK_TYPE_NORM.get(s.strip().upper()) or s.strip()
 
 for r in rows:
-    r["sdkType"]    = norm_sdk_type(r.get("sdkType", ""))
-    r["sdkVariant"] = norm_sdk_variant(r.get("sdkVariant"))
+    r["sdkType"] = norm_sdk_type(r.get("sdkType", ""))
+    # Use platformName (os_name) as SDK variant
+    platform = r.get("platformName") or ""
+    r["sdkVariant"] = platform if platform and platform.lower() not in ("null","none","") else None
+
+for r in daily_90d:
+    r["sdkType"] = norm_sdk_type(r.get("sdkType", ""))
 
 # ── Internals ─────────────────────────────────────────────────────────────────
 INTERNALS = {"Evinced Demo Account", "Evinced Dev Team", "GD", "Evinced Support"}
 
-# ── HubSpot + Zendesk data (loaded from fetch_hubspot.py / fetch_zendesk.py) ──
-def _load_account_metadata():
-    """Merge HubSpot and Zendesk data. Falls back to hardcoded defaults if files missing."""
-    hs_path = os.path.join(BASE, "hubspot_accounts.json")
-    zd_path = os.path.join(BASE, "zendesk_tickets.json")
+SDK_PRODUCT_TYPES = {"Espresso", "WebdriverIO", "XCUITest", "Appium", "MCP Server"}
 
-    hs = json.load(open(hs_path)) if os.path.exists(hs_path) else {}
-    zd = json.load(open(zd_path)) if os.path.exists(zd_path) else {}
-
-    if not hs:
-        print("⚠  hubspot_accounts.json not found — using fallback data. Run fetch_hubspot.py to populate.")
-    if not zd:
-        print("⚠  zendesk_tickets.json not found — ticket counts will show 0. Run fetch_zendesk.py to populate.")
-
-    # Merge: for every tenant seen in either source, combine fields
-    all_keys = set(hs.keys()) | set(zd.keys())
-    merged = {}
-    for k in all_keys:
-        h = hs.get(k, {})
-        z = zd.get(k, {})
-        merged[k] = {
-            "owner":         h.get("owner", "—"),
-            "se":            h.get("se", "—"),
-            "tam":           h.get("tam", "—"),
-            "renewal":       h.get("renewal", None),
-            "is_new":        h.get("is_new", False),
-            "tickets_all":   z.get("tickets_all", 0),
-            "tickets_month": z.get("tickets_month", 0),
-        }
-    return merged
-
-HUBSPOT = _load_account_metadata()
-
-# ── Hardcoded fallback (used only if hubspot_accounts.json is missing) ─────────
-_FALLBACK = {
+# ── HubSpot data ───────────────────────────────────────────────────────────────
+HUBSPOT = {
     "Amazon Blink":         {"owner": "—",               "se": "Dominic Lucia",    "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "tickets_all": 2,  "tickets_month": 0},
     "American Airlines":    {"owner": "Jacob Hume",      "se": "Kevin Berg",       "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "tickets_all": 1,  "tickets_month": 0},
     "Auticon":              {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "—",             "is_new": False, "renewal": "2026-05-31", "tickets_all": 1,  "tickets_month": 0},
@@ -154,15 +90,12 @@ _FALLBACK = {
     "Canal Plus":           {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "Capital One":          {"owner": "Navin Thadani",   "se": "Kevin Berg",       "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "tickets_all": 4,  "tickets_month": 0},
     "Charter":              {"owner": "—",               "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Chewy":                {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "Cigna":                {"owner": "Skye Hollins",    "se": "Justin Schaeffer", "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "tickets_all": 5,  "tickets_month": 0},
-    "Collective Health":    {"owner": "—",               "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "Comcast":              {"owner": "Jacob Hume",      "se": "Kevin Berg",       "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "Costco":               {"owner": "—",               "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "CreditOne":            {"owner": "—",               "se": "Dominic Lucia",    "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "Evinced Demo Account": {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "Evinced Dev Team":     {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Evinced Support":      {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "Expedia Group":        {"owner": "—",               "se": "Dominic Lucia",    "tam": "—",             "is_new": True,  "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "Fidelity Investments": {"owner": "—",               "se": "Dominic Lucia",    "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 4,  "tickets_month": 0},
     "GD":                   {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
@@ -173,53 +106,93 @@ _FALLBACK = {
     "Maximus":              {"owner": "Amandeep Dhillon","se": "Justin Schaeffer", "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "Microsoft":            {"owner": "Ryan Patterson",  "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "NatWest":              {"owner": "Liam Ingleby",    "se": "Chris Keene",      "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "PCCW":                 {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 1,  "tickets_month": 1},
-    "Pinterest":            {"owner": "—",               "se": "Justin Schaeffer", "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "Progressive":          {"owner": "Jacob Hume",      "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "SAP":                  {"owner": "Sam O'Meara",     "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 1,  "tickets_month": 0},
     "Sainsburys":           {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
     "Sky UK":               {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 3,  "tickets_month": 0},
     "Subway":               {"owner": "Skye Hollins",    "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 1,  "tickets_month": 1},
-    "TakeHomeTests":        {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Verizon":              {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Yahoo":                {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Zalando":              {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
 }
-if not HUBSPOT:
-    HUBSPOT = _FALLBACK
 
-CURRENT_MONTH_TICKETS = sum(v.get("tickets_month", 0) for v in HUBSPOT.values())
+# ── Zendesk — live data ────────────────────────────────────────────────────────
+# Severity pie
+if zendesk_severity:
+    ZD_SEV_LABELS = [r["severity"] for r in zendesk_severity]
+    ZD_SEV_VALUES = [r["count"] for r in zendesk_severity]
+    ZD_TOTAL = sum(ZD_SEV_VALUES)
+else:
+    ZD_SEV_LABELS = ["Normal", "Low", "High", "Urgent"]
+    ZD_SEV_VALUES = [12, 5, 4, 2]
+    ZD_TOTAL = 23
+
+# By type (MFA vs SDK vs General)
+if zendesk_by_type:
+    ZD_TYPE_LABELS = [r["type"] for r in zendesk_by_type]
+    ZD_TYPE_VALUES = [r["count"] for r in zendesk_by_type]
+else:
+    ZD_TYPE_LABELS = ["MFA", "Mobile SDK", "General Mobile"]
+    ZD_TYPE_VALUES = [5, 2, 1]
+
+# Monthly trend
+if zendesk_monthly:
+    ZD_MONTH_LABELS = [r["month"] for r in zendesk_monthly[-12:]]  # last 12 months
+    ZD_MONTH_VALUES = [r["count"] for r in zendesk_monthly[-12:]]
+else:
+    ZD_MONTH_LABELS, ZD_MONTH_VALUES = [], []
+
+# Build per-ticket JS array for dynamic date filtering
+ZD_TICKETS = []
+for t in _zd_tickets_raw:
+    date_str = (t.get("created_at") or "")[:10]   # YYYY-MM-DD
+    if not date_str:
+        continue
+    text = ((t.get("subject") or "") + " " + (t.get("description") or "")[:200]).lower()
+    has_mfa = "mfa" in text or "mobile flow" in text
+    has_sdk = any(k in text for k in ["sdk", "espresso", "xcui", "appium", "wdio"])
+    ticket_type = "MFA" if has_mfa else ("Mobile SDK" if has_sdk else "General Mobile")
+    ZD_TICKETS.append({
+        "date":     date_str,
+        "priority": (t.get("priority") or "normal").title(),
+        "type":     ticket_type,
+        "status":   t.get("status", ""),
+    })
+
+# Current month ticket count from Zendesk
+_cur_month = _date.today().strftime("%Y-%m")
+CURRENT_MONTH_TICKETS = next((r["count"] for r in (zendesk_monthly or []) if r["month"] == _cur_month), 0)
 
 # ── Derived summaries ──────────────────────────────────────────────────────────
 def user_id(r): return r.get("email") or r.get("serviceAccountId") or None
 
 all_tenants    = sorted(set(r["tenantName"] for r in rows if r["tenantName"]))
 ext_tenants    = [t for t in all_tenants if t not in INTERNALS]
-sdk_types_uniq = sorted(set(r["sdkType"] for r in rows if r["sdkType"]))
 total_scans    = sum(r["scans"] for r in rows)
 unique_users   = len(set(user_id(r) for r in rows if user_id(r)))
 new_count      = sum(1 for v in HUBSPOT.values() if v["is_new"])
 renewal_count  = sum(1 for v in HUBSPOT.values() if v["renewal"])
 
-# ── SDK pie — type only ───────────────────────────────────────────────────────
+# ── SDK type pie from 90d data ─────────────────────────────────────────────────
 sdk_type_agg = defaultdict(int)
-for r in rows:
+for r in daily_90d:
     sdk_type_agg[r["sdkType"]] += r["scans"]
 SDK_TYPE_PIE = [{"sdkType": k, "scans": v} for k, v in sorted(sdk_type_agg.items(), key=lambda x: -x[1])]
 
-# ── SDK type+variant stacked bar ──────────────────────────────────────────────
+# ── SDK type + platform (variant) stacked bar ─────────────────────────────────
 sdk_tv_agg = defaultdict(int)
-for r in rows:
-    variant = r.get("sdkVariant") or "—"
-    key = f"{r['sdkType']} / {variant}"
+for r in daily_90d:
+    platform = r.get("platformName") or "—"
+    key = f"{r['sdkType']} / {platform}"
     sdk_tv_agg[key] += r["scans"]
 SDK_TV_LIST = [{"label": k, "scans": v} for k, v in sorted(sdk_tv_agg.items(), key=lambda x: -x[1]) if v > 0]
 
-# ── Detail rows: group by (tenant, userId) — no sdkType so cross-product users don't duplicate ──
-det_agg = defaultdict(lambda: {"scans": 0, "total_issues": 0, "critical_issues": 0, "sdkTypes": set()})
+# ── Detail rows (user-level, last 14 days) ────────────────────────────────────
+det_agg = defaultdict(lambda: {"scans": 0, "sdkTypes": set()})
 for r in rows:
     uid = user_id(r) or ""
     key = (r["tenantName"], uid)
-    det_agg[key]["scans"]           += r["scans"]
-    det_agg[key]["total_issues"]    += r["total_issues"]
-    det_agg[key]["critical_issues"] += r["critical_issues"]
+    det_agg[key]["scans"]    += r["scans"]
     det_agg[key]["sdkTypes"].add(r["sdkType"])
 
 detail_rows = []
@@ -227,30 +200,28 @@ for (tenant, uid), stats in sorted(det_agg.items(), key=lambda x: -x[1]["scans"]
     hs = HUBSPOT.get(tenant, {})
     sdk_list = sorted(stats["sdkTypes"])
     detail_rows.append({
-        "tenantName":      tenant,
-        "userId":          uid,
-        "sdkTypes":        sdk_list,                        # array — used for JS filtering
-        "sdkType":         ", ".join(sdk_list),             # display string
-        "scans":           stats["scans"],
-        "total_issues":    stats["total_issues"],
-        "critical_issues": stats["critical_issues"],
-        "owner":           hs.get("owner", "—"),
-        "se":              hs.get("se", "—"),
-        "tam":             hs.get("tam", "—"),
-        "is_internal":     tenant in INTERNALS,
+        "tenantName": tenant,
+        "userId":     uid,
+        "sdkTypes":   sdk_list,
+        "sdkType":    ", ".join(sdk_list),
+        "scans":      stats["scans"],
+        "owner":      hs.get("owner", "—"),
+        "se":         hs.get("se", "—"),
+        "tam":        hs.get("tam", "—"),
+        "is_internal": tenant in INTERNALS,
     })
 
-# ── Accounts table ─────────────────────────────────────────────────────────────
-acct_agg = defaultdict(lambda: {"scans": 0})
-for r in rows:
-    acct_agg[r["tenantName"]]["scans"] += r["scans"]
+# ── Account rows ───────────────────────────────────────────────────────────────
+acct_agg = defaultdict(int)
+for r in daily_90d:
+    acct_agg[r["tenantName"]] += r["scans"]
 
 account_rows = []
-for tenant, stats in sorted(acct_agg.items(), key=lambda x: -x[1]["scans"]):
+for tenant, total in sorted(acct_agg.items(), key=lambda x: -x[1]):
     hs = HUBSPOT.get(tenant, {})
     account_rows.append({
         "tenantName":    tenant,
-        "total_scans":   stats["scans"],
+        "total_scans":   total,
         "latest_scan":   latest_scan.get(tenant, "—"),
         "owner":         hs.get("owner", "—"),
         "se":            hs.get("se", "—"),
@@ -262,94 +233,54 @@ for tenant, stats in sorted(acct_agg.items(), key=lambda x: -x[1]["scans"]):
     })
 
 # ── Filter options ─────────────────────────────────────────────────────────────
-tenant_opts   = "\n".join(f'<option value="{t}">{t}</option>' for t in all_tenants)
+tenant_opts   = "\n".join(f'<option value="{t}">{t}</option>' for t in sorted(set(r["tenantName"] for r in daily_90d if r["tenantName"])))
+sdk_types_uniq = sorted(set(r["sdkType"] for r in daily_90d if r["sdkType"]))
 sdk_type_opts = "\n".join(f'<option value="{s}">{s}</option>' for s in sdk_types_uniq)
 
-# ── Daily rows for chart + table filtering ────────────────────────────────────
-# Each entry carries everything needed to re-aggregate tables + KPIs on the fly in JS.
+# ── 90-day daily rows for JS ───────────────────────────────────────────────────
 daily_rows = []
-for r in rows:
+for r in daily_90d:
     if not r.get("date"):
         continue
-    uid = user_id(r) or None
-    hs  = HUBSPOT.get(r["tenantName"], {})
+    hs = HUBSPOT.get(r["tenantName"], {})
     daily_rows.append({
-        "date":           r["date"],
-        "tenantName":     r["tenantName"],
-        "userId":         uid,
-        "sdkType":        r["sdkType"],
-        "sdkVariant":     r.get("sdkVariant"),
-        "scans":          r["scans"],
-        "total_issues":   r["total_issues"],
-        "critical_issues": r["critical_issues"],
-        "se":             hs.get("se", "—"),
-        "owner":          hs.get("owner", "—"),
-        "tam":            hs.get("tam", "—"),
-        "isInternal":     r["tenantName"] in INTERNALS,
+        "date":        r["date"],
+        "tenantName":  r["tenantName"],
+        "sdkType":     r["sdkType"],
+        "platform":    r.get("platformName") or "",
+        "scans":       r["scans"],
+        "se":          hs.get("se", "—"),
+        "owner":       hs.get("owner", "—"),
+        "isInternal":  r["tenantName"] in INTERNALS,
     })
 
-# Build ordered date labels from the data itself
-from datetime import datetime as _dt
-all_dates = sorted(set(r["date"] for r in rows if r.get("date")))
-date_labels = [_dt.strptime(d, "%Y-%m-%d").strftime("%b %d") for d in all_dates]
-
-# ── Date range labels ──────────────────────────────────────────────────────────
-from datetime import timedelta as _td
-
-# Coralogix window: actual dates in the data
-if all_dates:
-    cx_start = _dt.strptime(all_dates[0],  "%Y-%m-%d")
-    cx_end   = _dt.strptime(all_dates[-1], "%Y-%m-%d")
-    coralogix_date_range = f"{cx_start.strftime('%b')} {cx_start.day} – {cx_end.strftime('%b')} {cx_end.day}, {cx_end.year}"
-else:
-    coralogix_date_range = "Apr 2026"
-
-# Pendo window: April 2026 month-to-date export (Apr 1 – Apr 16, 2026)
-pendo_date_range = "Apr 1 – Apr 16, 2026"
-
-# Calendar-week options derived from available dates
-_week_bounds = {}
-for _d in all_dates:
-    _dt_obj = _dt.strptime(_d, "%Y-%m-%d")
-    _monday = (_dt_obj - _td(days=_dt_obj.weekday())).strftime("%Y-%m-%d")
-    if _monday not in _week_bounds:
-        _week_bounds[_monday] = {"start": _d, "end": _d}
-    else:
-        _week_bounds[_monday]["end"] = _d
-
-week_options = []
-for _wk in sorted(_week_bounds):
-    _b = _week_bounds[_wk]
-    _s = _dt.strptime(_b["start"], "%Y-%m-%d")
-    _e = _dt.strptime(_b["end"],   "%Y-%m-%d")
-    week_options.append({
-        "label": f"{_s.strftime('%b')} {_s.day} – {_e.strftime('%b')} {_e.day}",
-        "start": _b["start"],
-        "end":   _b["end"],
-    })
+all_dates    = sorted(set(r["date"] for r in daily_90d if r.get("date")))
+date_labels  = [_dt.strptime(d, "%Y-%m-%d").strftime("%b %d") for d in all_dates]
 
 data_start = all_dates[0]  if all_dates else ""
 data_end   = all_dates[-1] if all_dates else ""
-week_options_js = json.dumps(week_options)
-data_start_js   = json.dumps(data_start)
-data_end_js     = json.dumps(data_end)
 
 # ── JS blobs ───────────────────────────────────────────────────────────────────
 detail_rows_js  = json.dumps(detail_rows)
 account_rows_js = json.dumps(account_rows)
 sdk_type_pie_js = json.dumps(SDK_TYPE_PIE)
 sdk_tv_js       = json.dumps(SDK_TV_LIST)
-timeseries_js   = json.dumps(timeseries)
 daily_rows_js   = json.dumps(daily_rows)
 date_keys_js    = json.dumps(all_dates)
 date_labels_js  = json.dumps(date_labels)
-ticket_labels_js= json.dumps(["Mobile Flow Analyzer Dashboard", "Mobile SDK Dashboard", "Mobile Flow Analyzer"])
-ticket_values_js= json.dumps([1, 1, 1])
-pendo_scan_js   = json.dumps(pendo_cat["Scan"]["features"])
-pendo_conn_js   = json.dumps(pendo_cat["Connection"]["features"])
-pendo_report_js = json.dumps(pendo_cat["Report"]["features"])
-internals_js    = json.dumps(list(INTERNALS))
-sdk_product_js  = json.dumps(list(SDK_PRODUCT_TYPES))
+internals_js       = json.dumps(list(INTERNALS))
+sdk_product_js     = json.dumps(list(SDK_PRODUCT_TYPES))
+zd_sev_labels_js   = json.dumps(ZD_SEV_LABELS)
+zd_sev_values_js   = json.dumps(ZD_SEV_VALUES)
+zd_type_labels_js  = json.dumps(ZD_TYPE_LABELS)
+zd_type_values_js  = json.dumps(ZD_TYPE_VALUES)
+zd_tickets_js      = json.dumps(ZD_TICKETS)
+zd_total           = ZD_TOTAL
+zd_is_real         = zendesk_severity is not None
+
+# New and renewal tenants for highlights
+new_tenants     = sorted(t for t, v in HUBSPOT.items() if v.get("is_new"))
+renewal_tenants = sorted((t, v["renewal"]) for t, v in HUBSPOT.items() if v.get("renewal"))
 
 # ── HTML ───────────────────────────────────────────────────────────────────────
 html = f"""<!DOCTYPE html>
@@ -375,7 +306,9 @@ html = f"""<!DOCTYPE html>
     .header-sub {{ font-size:11px; opacity:.7; margin-top:1px; }}
     .pill {{ background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.25); border-radius:20px; padding:4px 12px; font-size:11px; font-weight:500; }}
     .pill.green {{ background:rgba(16,185,129,.25); border-color:rgba(16,185,129,.4); }}
-    .status-bar {{ background:#3B0764; padding:5px 24px; display:flex; justify-content:flex-end; gap:20px; font-size:10px; color:rgba(255,255,255,.55); }}
+    .status-bar {{ background:#3B0764; padding:5px 24px; display:flex; justify-content:space-between; align-items:center; font-size:10px; color:rgba(255,255,255,.55); }}
+    .status-bar-left {{ display:flex; gap:20px; }}
+    .status-updated {{ font-size:10px; color:rgba(255,255,255,.45); }}
     .dot {{ display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:5px; vertical-align:middle; }}
     .dot-live {{ background:#10B981; animation:pulse 2s infinite; }}
     @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.4}} }}
@@ -385,17 +318,31 @@ html = f"""<!DOCTYPE html>
     .filters-header {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }}
     .filters-label {{ font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; }}
     .btn-reset {{ font-size:11px; color:var(--primary); background:none; border:none; cursor:pointer; font-family:inherit; }}
-    .filters-grid {{ display:grid; grid-template-columns:repeat(6,1fr); gap:10px; }}
+    .filters-grid {{ display:grid; grid-template-columns:repeat(7,1fr); gap:10px; align-items:start; }}
     .fg label {{ display:block; font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px; }}
     .fg select {{ width:100%; padding:6px 24px 6px 9px; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--text); background:#FAFAFA; font-family:inherit; outline:none; appearance:none;
       background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394A3B8'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 8px center; }}
     .fg select:focus {{ border-color:var(--primary); box-shadow:0 0 0 3px rgba(109,40,217,.1); }}
-    .kpi-row {{ display:grid; grid-template-columns:repeat(8,1fr); gap:12px; margin-bottom:18px; }}
+    /* Highlight card */
+    .highlights-card {{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:18px; }}
+    .hl-panel {{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; box-shadow:0 1px 4px rgba(0,0,0,.05); border-left:4px solid transparent; }}
+    .hl-panel.hl-drop {{ border-left-color:var(--red); background:#FFF5F5; }}
+    .hl-panel.hl-new  {{ border-left-color:var(--green); background:#F0FDF4; }}
+    .hl-panel.hl-renew {{ border-left-color:var(--amber); background:#FFFBEB; }}
+    .hl-title {{ font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }}
+    .hl-drop .hl-title  {{ color:var(--red); }}
+    .hl-new  .hl-title  {{ color:#065F46; }}
+    .hl-renew .hl-title {{ color:#92400E; }}
+    .hl-main {{ font-size:16px; font-weight:800; color:var(--text); margin-bottom:4px; }}
+    .hl-sub  {{ font-size:11px; color:var(--muted); }}
+    .hl-list {{ list-style:none; margin-top:6px; }}
+    .hl-list li {{ font-size:11px; padding:3px 0; color:var(--text); border-bottom:1px solid rgba(0,0,0,.04); display:flex; align-items:center; gap:6px; }}
+    .hl-list li:last-child {{ border-bottom:none; }}
+    .kpi-row {{ display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:18px; }}
     .kpi {{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; box-shadow:0 1px 4px rgba(0,0,0,.05); position:relative; overflow:hidden; }}
     .kpi::after {{ content:''; position:absolute; top:0;left:0;right:0;height:3px; }}
     .kpi.c-purple::after {{ background:var(--primary); }} .kpi.c-blue::after {{ background:var(--blue); }}
     .kpi.c-teal::after   {{ background:var(--teal); }}   .kpi.c-indigo::after {{ background:var(--indigo); }}
-    .kpi.c-amber::after  {{ background:var(--amber); }}  .kpi.c-red::after    {{ background:var(--red); }}
     .kpi.c-green::after  {{ background:var(--green); }}  .kpi.c-violet::after {{ background:#7C3AED; }}
     .kpi-label {{ font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px; }}
     .kpi-val {{ font-size:28px; font-weight:800; color:var(--text); line-height:1; margin-bottom:5px; letter-spacing:-.5px; }}
@@ -418,7 +365,8 @@ html = f"""<!DOCTYPE html>
     thead th {{ background:#F8FAFC; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.4px; font-size:9.5px; padding:9px 12px; text-align:left; border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }}
     thead th:hover {{ background:#EFF6FF; color:var(--primary); }}
     tbody tr {{ border-bottom:1px solid #F1F5F9; transition:background .1s; }}
-    tbody tr:hover {{ background:#FAFBFF; }} tbody tr:last-child {{ border-bottom:none; }}
+    tbody tr:hover {{ filter:brightness(0.97); }}
+    tbody tr:last-child {{ border-bottom:none; }}
     td {{ padding:9px 12px; }}
     td.mono {{ font-family:monospace; font-size:10px; color:var(--muted); }}
     td.num {{ font-variant-numeric:tabular-nums; font-weight:600; }}
@@ -429,7 +377,13 @@ html = f"""<!DOCTYPE html>
     .b-new {{ background:#D1FAE5; color:#065F46; }}
     .b-renewal {{ background:#FEF3C7; color:#92400E; }}
     .b-int {{ background:#F1F5F9; color:#64748B; }}
+    .b-drop {{ background:#FEE2E2; color:#991B1B; }}
     .b-none {{ color:#CBD5E1; font-size:12px; }}
+    .row-new {{ background:#F0FDF4 !important; }}
+    .row-renewal {{ background:#FFFBEB !important; }}
+    .row-drop {{ background:#FFF1F2 !important; }}
+    .legend-row {{ display:flex; gap:16px; padding:6px 18px 10px; font-size:10px; color:var(--muted); border-top:1px solid var(--border); }}
+    .legend-dot {{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:middle; }}
     .table-footer {{ display:flex; align-items:center; justify-content:space-between; padding:10px 18px; border-top:1px solid var(--border); }}
     .page-info {{ font-size:11px; color:var(--muted); }}
     .pag {{ display:flex; align-items:center; gap:6px; }}
@@ -437,7 +391,8 @@ html = f"""<!DOCTYPE html>
     .pag-btn:hover {{ background:#F8FAFC; }}
     .pag-btn:disabled {{ opacity:.4; cursor:default; }}
     .pag-pages {{ font-size:11px; color:var(--muted); min-width:80px; text-align:center; }}
-    @media(max-width:1400px) {{ .kpi-row{{grid-template-columns:repeat(4,1fr)}} .charts-grid{{grid-template-columns:repeat(2,1fr)}} }}
+    .zd-note {{ font-size:10px; color:var(--faint); font-style:italic; margin-top:6px; text-align:center; }}
+    @media(max-width:1400px) {{ .kpi-row{{grid-template-columns:repeat(3,1fr)}} .charts-grid{{grid-template-columns:repeat(2,1fr)}} }}
     @media(max-width:900px)  {{ .filters-grid{{grid-template-columns:repeat(3,1fr)}} }}
   </style>
 </head>
@@ -452,24 +407,26 @@ html = f"""<!DOCTYPE html>
   </div>
   <div style="display:flex;gap:10px;align-items:center">
     <div class="pill">Evinced Analytics</div>
-    <div class="pill green">● Live — Coralogix + HubSpot</div>
+    <div class="pill green">● Live — BigQuery + HubSpot</div>
   </div>
 </header>
 <div class="status-bar">
-  <span><span class="dot dot-live"></span>Coralogix: last 14 days · prod only</span>
-  <span><span class="dot dot-live"></span>HubSpot: Owner / SE / TAM · MFA/Mobile tickets</span>
-  <span style="color:rgba(255,255,255,.4)">Users: email (MFA) · service account (SDK)</span>
+  <div class="status-bar-left">
+    <span><span class="dot dot-live"></span>BigQuery: 90-day history · production</span>
+    <span><span class="dot dot-live"></span>HubSpot: Owner / SE / TAM · tickets</span>
+  </div>
+  <span class="status-updated">Last updated: {LAST_UPDATED}</span>
 </div>
 
 <div class="main">
   <div class="note-bar">
-    <strong>Live — Coralogix + HubSpot.</strong> Last 14 days · production only.
-    <strong>{len(all_tenants)} active tenants</strong> ({len(ext_tenants)} external) ·
+    <strong>Data from BigQuery + HubSpot.</strong>&nbsp;
+    <strong>{len(ext_tenants)} active external tenants</strong> ·
     <strong>{unique_users} active users</strong> ·
-    <strong>{total_scans:,} total scans</strong>.
-    New Tenant = HubSpot MFA/Mobile deal closed this month ·
-    Renewal = MFA/Mobile/All Products deal ending Apr–May 2026 ·
-    Support Tickets = tickets with "MFA" or "Mobile" in subject.
+    <strong>{total_scans:,} scans (last 14d)</strong>.&nbsp;
+    <span style="color:#1E40AF">🟢 New tenant</span> = HubSpot deal closed this month ·
+    <span style="color:#92400E">🟡 Renewal</span> = deal ending Apr–May 2026 ·
+    <span style="color:#991B1B">🔴 Drop</span> = biggest scan drop vs. prior period
   </div>
 
   <!-- FILTERS -->
@@ -497,13 +454,13 @@ html = f"""<!DOCTYPE html>
         </select></div>
       <div class="fg"><label>Date Range</label>
         <select id="f-date" onchange="onDateChange()">
-          <option value="all">All data</option>
+          <option value="30">Last 30 days</option>
           <option value="7">Last 7 days</option>
-          <option value="3">Last 3 days</option>
-          <!-- week options injected by JS -->
+          <option value="60">Last 60 days</option>
+          <option value="all">All data (90d)</option>
           <option value="custom">Custom range…</option>
         </select>
-        <div id="custom-date-wrap" style="display:none;margin-top:5px;align-items:center;gap:4px">
+        <div id="custom-date-wrap" style="display:none;margin-top:5px;display:none;align-items:center;gap:4px">
           <input type="date" id="f-date-from" onchange="applyFilters()"
             style="padding:3px 5px;border:1px solid #E2E8F0;border-radius:5px;font-size:11px;color:#1E293B">
           <span style="color:#94A3B8;font-size:11px">–</span>
@@ -520,110 +477,82 @@ html = f"""<!DOCTYPE html>
         <select id="f-se" onchange="applyFilters()">
           <option value="all">All SEs</option>
         </select></div>
+      <div class="fg"><label>Weekends</label>
+        <select id="f-no-weekends" onchange="applyFilters()">
+          <option value="include">Include weekends</option>
+          <option value="exclude">Exclude weekends</option>
+        </select></div>
     </div>
   </div>
 
-  <!-- KPIs -->
-  <div class="kpi-row">
-    <div class="kpi c-blue">  <div class="kpi-label">Active Tenants</div><div class="kpi-val" id="k-tenants">{len(ext_tenants)}</div><div class="kpi-sub" id="k-tenants-sub">Last 14d · excl. internals</div></div>
-    <div class="kpi c-teal">  <div class="kpi-label">Active Users</div><div class="kpi-val" id="k-users">{unique_users}</div><div class="kpi-sub">email (MFA) + service acct (SDK)</div></div>
-    <div class="kpi c-indigo"><div class="kpi-label">Total Scans</div><div class="kpi-val" id="k-scans">{total_scans:,}</div><div class="kpi-sub" id="k-scans-sub">Last 14 days</div></div>
-    <div class="kpi c-amber"> <div class="kpi-label">Avg Issues / Scan</div><div class="kpi-val" id="k-issues">—</div><div class="kpi-sub">total issues ÷ scans</div></div>
-    <div class="kpi c-red">   <div class="kpi-label">Avg Critical / Scan</div><div class="kpi-val" id="k-crit">—</div><div class="kpi-sub">critical issues ÷ scans</div></div>
-    <div class="kpi c-green"> <div class="kpi-label">New Tenants</div><div class="kpi-val">{new_count}</div><div class="kpi-sub">MFA/Mobile deal · closed this month</div></div>
-    <div class="kpi c-violet"><div class="kpi-label">Upcoming Renewals</div><div class="kpi-val">{renewal_count}</div><div class="kpi-sub">deal ending Apr–May 2026</div></div>
-    <div class="kpi c-purple"><div class="kpi-label">Support Tickets</div><div class="kpi-val">{CURRENT_MONTH_TICKETS}</div><div class="kpi-sub">MFA/Mobile subject · Apr 2026</div></div>
+  <!-- HIGHLIGHTS -->
+  <div class="highlights-card">
+    <div class="hl-panel hl-drop">
+      <div class="hl-title">📉 Biggest Scan Drop vs. Prev Period</div>
+      <div class="hl-main" id="hl-drop-tenant">—</div>
+      <div class="hl-sub"  id="hl-drop-detail">Computed from selected date range</div>
+    </div>
+    <div class="hl-panel hl-new">
+      <div class="hl-title">🟢 New Tenants</div>
+      <ul class="hl-list" id="hl-new-list">
+        {"".join(f"<li>✦ {t}</li>" for t in new_tenants) or "<li style='color:var(--faint)'>None this period</li>"}
+      </ul>
+    </div>
+    <div class="hl-panel hl-renew">
+      <div class="hl-title">🟡 Upcoming Renewals</div>
+      <ul class="hl-list" id="hl-renewal-list">
+        {"".join(f'<li>⏱ <strong>{t}</strong> <span style="color:var(--faint);font-size:10px">· {d}</span></li>' for t, d in renewal_tenants) or "<li style='color:var(--faint)'>None upcoming</li>"}
+      </ul>
+    </div>
   </div>
 
-  <!-- CHARTS -->
+  <!-- KPIs (6 cards — avg issues/scan and critical/scan removed) -->
+  <div class="kpi-row">
+    <div class="kpi c-blue">  <div class="kpi-label">Active Tenants</div><div class="kpi-val" id="k-tenants">{len(ext_tenants)}</div><div class="kpi-sub" id="k-tenants-sub">excl. internals</div></div>
+    <div class="kpi c-teal">  <div class="kpi-label">Active Users</div><div class="kpi-val" id="k-users">{unique_users}</div><div class="kpi-sub">email (MFA) + service acct (SDK)</div></div>
+    <div class="kpi c-indigo"><div class="kpi-label">Total Scans</div><div class="kpi-val" id="k-scans">{total_scans:,}</div><div class="kpi-sub" id="k-scans-sub">selected period</div></div>
+    <div class="kpi c-green"> <div class="kpi-label">New Tenants</div><div class="kpi-val">{new_count}</div><div class="kpi-sub">MFA/Mobile deal · closed this month</div></div>
+    <div class="kpi c-violet"><div class="kpi-label">Upcoming Renewals</div><div class="kpi-val">{renewal_count}</div><div class="kpi-sub">deal ending Apr–May 2026</div></div>
+    <div class="kpi c-purple"><div class="kpi-label">Support Tickets</div><div class="kpi-val">{CURRENT_MONTH_TICKETS}</div><div class="kpi-sub">Zendesk · mobile/MFA · this month</div></div>
+  </div>
+
+  <!-- CHARTS: row 1 — Active Tenants · Total Scans · SDK Type Distribution -->
   <div class="charts-grid">
     <div class="chart-card">
-      <div class="chart-header"><div><div class="chart-title">Active Tenants Over Time</div><span class="chart-source">Coralogix · 14d · overall</span></div></div>
+      <div class="chart-header"><div><div class="chart-title">Active Tenants Over Time</div><span class="chart-source">BigQuery · selected range</span></div></div>
       <div class="chart-wrap"><canvas id="ch-tenants"></canvas></div>
     </div>
     <div class="chart-card">
-      <div class="chart-header"><div><div class="chart-title">Support Tickets by Type — Apr 2026</div><span class="chart-source">HubSpot · MFA/Mobile subject</span></div></div>
-      <div class="chart-wrap"><canvas id="ch-tickets"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-header"><div><div class="chart-title">Total Scans Over Time</div><span class="chart-source">Coralogix · 14d · overall</span></div></div>
+      <div class="chart-header"><div><div class="chart-title">Total Scans Over Time</div><span class="chart-source">BigQuery · selected range</span></div></div>
       <div class="chart-wrap"><canvas id="ch-scans"></canvas></div>
     </div>
     <div class="chart-card">
-      <div class="chart-header"><div><div class="chart-title">Active Users Over Time</div><span class="chart-source">Coralogix · 14d · overall</span></div></div>
-      <div class="chart-wrap"><canvas id="ch-users"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-header"><div><div class="chart-title">SDK Type Breakdown</div><span class="chart-source">Coralogix · by scan count</span></div></div>
+      <div class="chart-header"><div><div class="chart-title">SDK Type Distribution</div><span class="chart-source">BigQuery · by scan count</span></div></div>
       <div class="chart-wrap"><canvas id="ch-sdk-type"></canvas></div>
     </div>
+  </div>
+
+  <!-- CHARTS: row 2 — Zendesk Severity · Zendesk by Product · SDK Type + Platform -->
+  <div class="charts-grid">
     <div class="chart-card">
-      <div class="chart-header"><div><div class="chart-title">SDK Type + Variant Breakdown</div><span class="chart-source">Coralogix · by scan count</span></div></div>
+      <div class="chart-header"><div>
+        <div class="chart-title">Zendesk by Severity</div>
+        <span class="chart-source" id="zd-sev-source">Zendesk · filtered by date</span>
+      </div></div>
+      <div class="chart-wrap"><canvas id="ch-zd-severity"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header"><div>
+        <div class="chart-title">Zendesk by Product Area</div>
+        <span class="chart-source" id="zd-type-source">Zendesk · filtered by date</span>
+      </div></div>
+      <div class="chart-wrap"><canvas id="ch-tickets"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header"><div><div class="chart-title">SDK Type + Platform</div><span class="chart-source">BigQuery · os_name as variant</span></div></div>
       <div class="chart-wrap"><canvas id="ch-sdk-tv"></canvas></div>
     </div>
   </div>
-
-  <!-- MFA FEATURE ACTIVITY ─────────────────────────────────────────────── -->
-  <div id="mfa-section">
-  <div class="section-label" style="margin-top:8px">📊 MFA Feature Activity <span>Pendo · {pendo_date_range} · MFA only</span></div>
-
-  <!-- MFA KPI row -->
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px">
-    <div class="kpi c-purple">
-      <div class="kpi-label">Users — Scan Features</div>
-      <div class="kpi-val">{pendo_cat["Scan"]["users"]}</div>
-      <div class="kpi-sub">Pendo · {pendo_date_range} · unique visitors</div>
-    </div>
-    <div class="kpi c-blue">
-      <div class="kpi-label">Users — Connection Features</div>
-      <div class="kpi-val">{pendo_cat["Connection"]["users"]}</div>
-      <div class="kpi-sub">Pendo · {pendo_date_range} · unique visitors</div>
-    </div>
-    <div class="kpi c-teal">
-      <div class="kpi-label">Users — Report Features</div>
-      <div class="kpi-val">{pendo_cat["Report"]["users"]}</div>
-      <div class="kpi-sub">Pendo · {pendo_date_range} · unique visitors</div>
-    </div>
-  </div>
-
-  <!-- MFA time series -->
-  <div class="charts-grid" style="grid-template-columns:1fr;margin-bottom:18px">
-    <div class="chart-card">
-      <div class="chart-header">
-        <div>
-          <div class="chart-title">MFA Active Users Over Time</div>
-          <span class="chart-source">Coralogix daily MFA users · {coralogix_date_range}</span>
-        </div>
-      </div>
-      <div class="chart-wrap" style="height:200px"><canvas id="ch-mfa-trend"></canvas></div>
-    </div>
-  </div>
-
-  <!-- Feature bar charts: one per category -->
-  <div class="charts-grid" style="margin-bottom:18px">
-    <div class="chart-card">
-      <div class="chart-header"><div>
-        <div class="chart-title">Scan Features — Events ({pendo_date_range})</div>
-        <span class="chart-source">Pendo · click count per feature</span>
-      </div></div>
-      <div class="chart-wrap" style="height:{max(160, len(pendo_cat['Scan']['features'])*30)}px"><canvas id="ch-pendo-scan"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-header"><div>
-        <div class="chart-title">Connection Features — Events ({pendo_date_range})</div>
-        <span class="chart-source">Pendo · click count per feature</span>
-      </div></div>
-      <div class="chart-wrap" style="height:{max(160, len(pendo_cat['Connection']['features'])*30)}px"><canvas id="ch-pendo-conn"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-header"><div>
-        <div class="chart-title">Report Features — Events ({pendo_date_range})</div>
-        <span class="chart-source">Pendo · click count per feature</span>
-      </div></div>
-      <div class="chart-wrap" style="height:{max(160, len(pendo_cat['Report']['features'])*30)}px"><canvas id="ch-pendo-report"></canvas></div>
-    </div>
-  </div>
-  </div><!-- /#mfa-section -->
 
   <!-- ACCOUNTS TABLE -->
   <div class="section-label">📋 Accounts <span>Tenant-level summary · sorted by total scans</span></div>
@@ -646,6 +575,11 @@ html = f"""<!DOCTYPE html>
         <tbody id="acct-body"></tbody>
       </table>
     </div>
+    <div class="legend-row">
+      <span><span class="legend-dot" style="background:#D1FAE5"></span>New tenant</span>
+      <span><span class="legend-dot" style="background:#FEF3C7"></span>Upcoming renewal</span>
+      <span><span class="legend-dot" style="background:#FEE2E2"></span>Biggest scan drop vs. prior period</span>
+    </div>
     <div class="table-footer">
       <span class="page-info" id="acct-info"></span>
       <div class="pag">
@@ -657,7 +591,7 @@ html = f"""<!DOCTYPE html>
   </div>
 
   <!-- USERS DETAIL TABLE -->
-  <div class="section-label">👤 Users <span>Per-user scan detail</span></div>
+  <div class="section-label">👤 Users <span>Per-user scan detail · last 14 days</span></div>
   <div class="table-card">
     <div class="table-header">
       <div class="table-title">User Scan Detail</div>
@@ -668,9 +602,8 @@ html = f"""<!DOCTYPE html>
         <thead><tr>
           <th onclick="sortDet('tenantName')">Tenant ↕</th>
           <th onclick="sortDet('userId')">User ↕</th>
+          <th onclick="sortDet('sdkType')">SDK Type ↕</th>
           <th onclick="sortDet('scans')">Scans ↕</th>
-          <th onclick="sortDet('total_issues')">Total Issues ↕</th>
-          <th onclick="sortDet('critical_issues')">Critical Issues ↕</th>
         </tr></thead>
         <tbody id="det-body"></tbody>
       </table>
@@ -688,7 +621,6 @@ html = f"""<!DOCTYPE html>
 
 <script>
 // ── Constants ─────────────────────────────────────────────────────────────────
-const TIMESERIES    = {timeseries_js};
 const DAILY_ROWS    = {daily_rows_js};
 const DATE_KEYS     = {date_keys_js};
 const DATE_LABELS   = {date_labels_js};
@@ -696,52 +628,35 @@ const SDK_TYPE_PIE  = {sdk_type_pie_js};
 const SDK_TV_LIST   = {sdk_tv_js};
 const DETAIL_ROWS   = {detail_rows_js};
 const ACCOUNT_ROWS  = {account_rows_js};
-const TICKET_LABELS  = {ticket_labels_js};
-const TICKET_VALUES  = {ticket_values_js};
-const PENDO_SCAN     = {pendo_scan_js};
-const PENDO_CONN     = {pendo_conn_js};
-const PENDO_REPORT   = {pendo_report_js};
-const INTERNALS      = new Set({internals_js});
-const SDK_PRODUCTS  = new Set({sdk_product_js}); // Espresso, WebdriverIO, XCUITest, Appium, MCP Server
-
-// Static HubSpot metadata per tenant (latest_scan, tickets, renewal, is_new) — not date-dependent
-const ACCT_META = {{}};
-ACCOUNT_ROWS.forEach(r => {{ ACCT_META[r.tenantName] = r; }});
-
-// Date filter helpers
-const WEEK_OPTIONS = {week_options_js};
-const DATA_START   = {data_start_js};
-const DATA_END     = {data_end_js};
+const INTERNALS        = new Set({internals_js});
+const SDK_PRODUCTS     = new Set({sdk_product_js});
+const ZD_TICKETS       = {zd_tickets_js};
+const DATA_START       = {json.dumps(data_start)};
+const DATA_END      = {json.dumps(data_end)};
 
 const PER_PAGE = 10;
 
+// ACCT_META for static HubSpot-sourced fields
+const ACCT_META = {{}};
+ACCOUNT_ROWS.forEach(r => {{ ACCT_META[r.tenantName] = r; }});
+
 // ── Populate SE filter ────────────────────────────────────────────────────────
 (function() {{
-  const ses = [...new Set(ACCOUNT_ROWS.map(r => r.se).filter(s => s && s !== '\u2014'))].sort();
+  const ses = [...new Set(ACCOUNT_ROWS.map(r => r.se).filter(s => s && s !== '—'))].sort();
   const sel = document.getElementById('f-se');
   ses.forEach(s => {{ const o = document.createElement('option'); o.value = s; o.textContent = s; sel.appendChild(o); }});
 }})();
 
-// ── Populate date filter with week options ────────────────────────────────────
+// ── Date range setup ──────────────────────────────────────────────────────────
 (function() {{
-  const sel = document.getElementById('f-date');
-  // Insert week options before the "Custom…" option (last child)
-  const customOpt = sel.lastElementChild;
-  const sep = document.createElement('option');
-  sep.disabled = true; sep.textContent = '\u2500\u2500 By calendar week \u2500\u2500';
-  sel.insertBefore(sep, customOpt);
-  WEEK_OPTIONS.forEach((w, i) => {{
-    const o = document.createElement('option');
-    o.value = 'week_' + i; o.textContent = w.label;
-    sel.insertBefore(o, customOpt);
-  }});
-  // Set custom date picker bounds + default values
   const from = document.getElementById('f-date-from');
   const to   = document.getElementById('f-date-to');
-  from.min = to.min = DATA_START;
-  from.max = to.max = DATA_END;
-  from.value = DATA_START;
-  to.value   = DATA_END;
+  if (from && to) {{
+    from.min = to.min = DATA_START;
+    from.max = to.max = DATA_END;
+    from.value = DATA_START;
+    to.value   = DATA_END;
+  }}
 }})();
 
 function onDateChange() {{
@@ -751,132 +666,177 @@ function onDateChange() {{
   applyFilters();
 }}
 
+function isWeekend(dateStr) {{
+  const d   = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay(); // 0=Sun, 6=Sat
+  return day === 0 || day === 6;
+}}
+
+function zdFilteredTickets(startDate, endDate, noWeekends) {{
+  return ZD_TICKETS.filter(t => {{
+    if (!t.date || t.date < startDate || t.date > endDate) return false;
+    if (noWeekends && isWeekend(t.date)) return false;
+    return true;
+  }});
+}}
+
+function updateZendeskCharts(startDate, endDate, noWeekends) {{
+  const tickets = zdFilteredTickets(startDate, endDate, noWeekends);
+  const total   = tickets.length;
+
+  // Severity aggregation
+  const sevAgg = {{}};
+  tickets.forEach(t => {{ sevAgg[t.priority] = (sevAgg[t.priority]||0) + 1; }});
+  const sevOrder = ['Normal','Low','High','Urgent','Critical'];
+  const sevEntries = sevOrder.filter(k => sevAgg[k]).map(k => [k, sevAgg[k]]);
+  // Also add any unexpected priorities
+  Object.entries(sevAgg).forEach(([k,v]) => {{ if (!sevOrder.includes(k)) sevEntries.push([k,v]); }});
+
+  // Type aggregation
+  const typeAgg = {{}};
+  tickets.forEach(t => {{ typeAgg[t.type] = (typeAgg[t.type]||0) + 1; }});
+
+  const ZD_SEV_COLORS = {{'Normal':'#3B82F6','Low':'#10B981','High':'#F59E0B','Urgent':'#EF4444','Critical':'#DC2626'}};
+  const ZD_TYPE_COLORS = ['#6D28D9','#3B82F6','#0D9488'];
+  const CC2 = ['#6D28D9','#3B82F6','#0D9488','#F59E0B','#EF4444','#10B981'];
+
+  if (CHARTS.zdSeverity) {{
+    const labels = sevEntries.map(([k])=>k);
+    const values = sevEntries.map(([,v])=>v);
+    CHARTS.zdSeverity.data.labels   = labels;
+    CHARTS.zdSeverity.data.datasets[0].data = values;
+    CHARTS.zdSeverity.data.datasets[0].backgroundColor = labels.map(l=>(ZD_SEV_COLORS[l]||'#94A3B8')+'CC');
+    CHARTS.zdSeverity.data.datasets[0].borderColor     = labels.map(l=> ZD_SEV_COLORS[l]||'#94A3B8');
+    CHARTS.zdSeverity.update();
+  }}
+  if (CHARTS.tickets) {{
+    const typeEntries = Object.entries(typeAgg).sort((a,b)=>b[1]-a[1]);
+    CHARTS.tickets.data.labels = typeEntries.map(([k])=>k);
+    CHARTS.tickets.data.datasets[0].data = typeEntries.map(([,v])=>v);
+    CHARTS.tickets.data.datasets[0].backgroundColor = typeEntries.map((_,i)=>ZD_TYPE_COLORS[i%ZD_TYPE_COLORS.length]+'CC');
+    CHARTS.tickets.data.datasets[0].borderColor     = typeEntries.map((_,i)=>ZD_TYPE_COLORS[i%ZD_TYPE_COLORS.length]);
+    CHARTS.tickets.update();
+  }}
+
+  // Update source labels
+  const src = `${{total}} tickets · ${{startDate}} – ${{endDate}}`;
+  const sl = document.getElementById('zd-section-label'); if(sl) sl.textContent = 'mobile/MFA · ' + src;
+  const ss = document.getElementById('zd-sev-source');   if(ss) ss.textContent = 'Zendesk · ' + src;
+  const ts = document.getElementById('zd-type-source');  if(ts) ts.textContent = 'Zendesk · ' + src;
+}}
+
 function getDateRange() {{
-  const val = document.getElementById('f-date').value;
+  const val  = document.getElementById('f-date').value;
   const last = DATE_KEYS[DATE_KEYS.length - 1] || '';
   if (val === 'all')    return [DATE_KEYS[0] || '', last];
   if (val === 'custom') return [
     document.getElementById('f-date-from').value || DATE_KEYS[0] || '',
     document.getElementById('f-date-to').value   || last
   ];
-  if (val.startsWith('week_')) {{
-    const w = WEEK_OPTIONS[parseInt(val.slice(5))];
-    return [w.start, w.end];
-  }}
-  // Rolling: last N days
-  const days  = parseInt(val) || 14;
-  const start = DATE_KEYS.length > days ? DATE_KEYS[DATE_KEYS.length - days] : (DATE_KEYS[0] || '');
+  // Rolling: last N days from the latest date in data
+  const days  = parseInt(val) || 30;
+  const endDt = new Date(last + 'T00:00:00');
+  const startDt = new Date(endDt);
+  startDt.setDate(startDt.getDate() - days + 1);
+  const start = startDt.toISOString().slice(0, 10);
   return [start, last];
 }}
 
-// ── Charts ────────────────────────────────────────────────────────────────────
+function getPrevDateRange(startDate, endDate) {{
+  // Compute same-length window immediately before startDate
+  const s = new Date(startDate + 'T00:00:00');
+  const e = new Date(endDate   + 'T00:00:00');
+  const len = Math.round((e - s) / 86400000) + 1;
+  const prevEnd = new Date(s); prevEnd.setDate(prevEnd.getDate() - 1);
+  const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - len + 1);
+  return [prevStart.toISOString().slice(0,10), prevEnd.toISOString().slice(0,10)];
+}}
+
+// ── Chart colors ──────────────────────────────────────────────────────────────
 const CC = ['#6D28D9','#3B82F6','#0D9488','#F59E0B','#EF4444','#10B981','#8B5CF6','#06B6D4'];
 const CHARTS = {{}};
 
 function mkLine(id, label, color, labels, data) {{
   return new Chart(document.getElementById(id), {{
-    type:'line',
-    data:{{ labels, datasets:[{{ label, data, borderColor:color, backgroundColor:color+'22', borderWidth:2, pointRadius:3, tension:0.3, fill:true }}] }},
-    options:{{ responsive:true, maintainAspectRatio:false,
-      plugins:{{ legend:{{display:false}}, tooltip:{{ backgroundColor:'#1E293B', bodyFont:{{size:11}}, padding:8, cornerRadius:6 }} }},
-      scales:{{ x:{{ grid:{{display:false}}, ticks:{{font:{{size:9}},color:'#94A3B8'}} }}, y:{{ grid:{{color:'#F1F5F9'}}, ticks:{{font:{{size:10}},color:'#94A3B8'}}, beginAtZero:true }} }} }}
+    type: 'line',
+    data: {{ labels, datasets:[{{ label, data, borderColor:color, backgroundColor:color+'22', borderWidth:2, pointRadius:3, tension:0.3, fill:true }}] }},
+    options: {{
+      responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend:{{display:false}}, tooltip:{{ backgroundColor:'#1E293B', bodyFont:{{size:11}}, padding:8, cornerRadius:6 }} }},
+      scales: {{
+        x: {{ grid:{{display:false}}, ticks:{{font:{{size:9}}, color:'#94A3B8', maxTicksLimit:12}} }},
+        y: {{ grid:{{color:'#F1F5F9'}}, ticks:{{font:{{size:10}}, color:'#94A3B8'}}, beginAtZero:true }}
+      }}
+    }}
   }});
 }}
 
-// Compute daily series. startDate/endDate narrow the x-axis; default = full range.
-function computeDaily(filteredDailyRows, startDate, endDate) {{
-  startDate = startDate || DATE_KEYS[0] || '';
-  endDate   = endDate   || DATE_KEYS[DATE_KEYS.length - 1] || '';
+function computeDaily(filteredRows, startDate, endDate) {{
   const keys   = DATE_KEYS.filter(d => d >= startDate && d <= endDate);
-  const labels = keys.map(d => DATE_LABELS[DATE_KEYS.indexOf(d)]);
-  const tMap = {{}}, uMap = {{}}, sMap = {{}};
-  filteredDailyRows.forEach(r => {{
-    if (!tMap[r.date]) tMap[r.date] = new Set();
-    if (!uMap[r.date]) uMap[r.date] = new Set();
-    if (r.tenantName) tMap[r.date].add(r.tenantName);
-    if (r.userId)     uMap[r.date].add(r.userId);
-    sMap[r.date] = (sMap[r.date] || 0) + (r.scans || 0);
+  const labels = keys.map(d => DATE_LABELS[DATE_KEYS.indexOf(d)] || d);
+  const tMap = {{}}, sMap = {{}};
+  filteredRows.forEach(r => {{
+    if (r.date >= startDate && r.date <= endDate) {{
+      if (!tMap[r.date]) tMap[r.date] = new Set();
+      if (r.tenantName) tMap[r.date].add(r.tenantName);
+      sMap[r.date] = (sMap[r.date] || 0) + (r.scans || 0);
+    }}
   }});
   return {{
     labels,
     tenants: keys.map(d => tMap[d] ? tMap[d].size : 0),
-    users:   keys.map(d => uMap[d] ? uMap[d].size : 0),
     scans:   keys.map(d => sMap[d] || 0),
   }};
 }}
 
 function initCharts() {{
-  const baseline = computeDaily(DAILY_ROWS.filter(r => !r.isInternal));
-  CHARTS.tenants = mkLine('ch-tenants','Active Tenants','#3B82F6', DATE_LABELS, baseline.tenants);
-  CHARTS.scans   = mkLine('ch-scans',  'Total Scans',  '#6D28D9', DATE_LABELS,  baseline.scans);
-  CHARTS.users   = mkLine('ch-users',  'Active Users',  '#0D9488', DATE_LABELS, baseline.users);
+  const ext = DAILY_ROWS.filter(r => !r.isInternal);
+  const [s, e] = getDateRange();
+  const baseline = computeDaily(ext, s, e);
 
-  // Tickets pie — one distinct color per ticket
-  const TICKET_COLORS = ['#6D28D9','#0D9488','#F59E0B','#EF4444','#3B82F6','#10B981'];
-  CHARTS.tickets = new Chart(document.getElementById('ch-tickets'), {{
-    type:'pie',
-    data:{{ labels:TICKET_LABELS, datasets:[{{ data:TICKET_VALUES,
-      backgroundColor:TICKET_LABELS.map((_,i)=>TICKET_COLORS[i%TICKET_COLORS.length]+'CC'),
-      borderColor:TICKET_LABELS.map((_,i)=>TICKET_COLORS[i%TICKET_COLORS.length]), borderWidth:2 }}] }},
-    options:{{ responsive:true, maintainAspectRatio:false,
-      plugins:{{ legend:{{position:'bottom',labels:{{font:{{size:10}},padding:10,boxWidth:12}}}},
-        tooltip:{{backgroundColor:'#1E293B',callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed+' ticket'+(ctx.parsed!==1?'s':'')}}}} }} }}
-  }});
+  CHARTS.tenants = mkLine('ch-tenants', 'Active Tenants', '#3B82F6', baseline.labels, baseline.tenants);
+  CHARTS.scans   = mkLine('ch-scans',   'Total Scans',    '#6D28D9', baseline.labels, baseline.scans);
 
   // SDK type pie
   CHARTS.sdkType = new Chart(document.getElementById('ch-sdk-type'), {{
-    type:'pie',
-    data:{{ labels:SDK_TYPE_PIE.map(s=>s.sdkType),
-            datasets:[{{ data:SDK_TYPE_PIE.map(s=>s.scans),
-              backgroundColor:SDK_TYPE_PIE.map((_,i)=>CC[i%CC.length]+'CC'),
-              borderColor:SDK_TYPE_PIE.map((_,i)=>CC[i%CC.length]), borderWidth:2 }}] }},
-    options:{{ responsive:true, maintainAspectRatio:false,
-      plugins:{{ legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
+    type: 'pie',
+    data: {{ labels: SDK_TYPE_PIE.map(s=>s.sdkType),
+             datasets: [{{ data: SDK_TYPE_PIE.map(s=>s.scans),
+               backgroundColor: SDK_TYPE_PIE.map((_,i)=>CC[i%CC.length]+'CC'),
+               borderColor:     SDK_TYPE_PIE.map((_,i)=>CC[i%CC.length]), borderWidth:2 }}] }},
+    options: {{ responsive:true, maintainAspectRatio:false,
+      plugins: {{ legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
         tooltip:{{callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed.toLocaleString()+' scans'}}}} }} }}
   }});
 
-  // ── MFA feature activity (Pendo) ─────────────────────────────────────────
-
-  // MFA users over time — Coralogix daily data filtered to MFA
-  const mfaDaily = computeDaily(DAILY_ROWS.filter(r => !r.isInternal && r.sdkType === 'MFA'));
-  CHARTS.mfaTrend = mkLine('ch-mfa-trend', 'MFA Active Users', '#6D28D9', DATE_LABELS, mfaDaily.users);
-
-  // Helper: horizontal bar chart for Pendo feature data
-  function mkPendoBar(id, data, color) {{
-    return new Chart(document.getElementById(id), {{
-      type: 'bar',
-      data: {{
-        labels: data.map(d => d.feature),
-        datasets: [{{ data: data.map(d => d.events),
-          backgroundColor: color + '99', borderColor: color, borderWidth: 1 }}]
-      }},
-      options: {{
-        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-        plugins: {{ legend: {{display:false}},
-          tooltip: {{ backgroundColor:'#1E293B',
-            callbacks: {{ label: ctx => ' ' + ctx.parsed.x.toLocaleString() + ' events' }} }} }},
-        scales: {{
-          x: {{ grid:{{color:'#F1F5F9'}}, ticks:{{font:{{size:9}},color:'#94A3B8'}}, beginAtZero:true }},
-          y: {{ grid:{{display:false}}, ticks:{{font:{{size:10}},color:'#64748B'}} }}
-        }}
-      }}
-    }});
-  }}
-
-  CHARTS.pendoScan   = mkPendoBar('ch-pendo-scan',   PENDO_SCAN,   '#6D28D9');
-  CHARTS.pendoConn   = mkPendoBar('ch-pendo-conn',   PENDO_CONN,   '#3B82F6');
-  CHARTS.pendoReport = mkPendoBar('ch-pendo-report', PENDO_REPORT, '#0D9488');
-
-  // SDK type+variant horizontal bar
+  // SDK type + platform bar
   CHARTS.sdkTV = new Chart(document.getElementById('ch-sdk-tv'), {{
-    type:'bar',
-    data:{{ labels:SDK_TV_LIST.map(s=>s.label),
-            datasets:[{{ data:SDK_TV_LIST.map(s=>s.scans),
-              backgroundColor:SDK_TV_LIST.map((_,i)=>CC[i%CC.length]+'BB'),
-              borderColor:SDK_TV_LIST.map((_,i)=>CC[i%CC.length]), borderWidth:1 }}] }},
-    options:{{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{{ legend:{{display:false}}, tooltip:{{backgroundColor:'#1E293B',callbacks:{{label:ctx=>' '+ctx.parsed.x.toLocaleString()+' scans'}}}} }},
-      scales:{{ x:{{grid:{{color:'#F1F5F9'}},ticks:{{font:{{size:9}},color:'#94A3B8'}},beginAtZero:true}}, y:{{grid:{{display:false}},ticks:{{font:{{size:9}},color:'#64748B'}}}} }} }}
+    type: 'bar',
+    data: {{ labels: SDK_TV_LIST.map(s=>s.label),
+             datasets: [{{ data: SDK_TV_LIST.map(s=>s.scans),
+               backgroundColor: SDK_TV_LIST.map((_,i)=>CC[i%CC.length]+'BB'),
+               borderColor:     SDK_TV_LIST.map((_,i)=>CC[i%CC.length]), borderWidth:1 }}] }},
+    options: {{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins: {{ legend:{{display:false}}, tooltip:{{backgroundColor:'#1E293B',callbacks:{{label:ctx=>' '+ctx.parsed.x.toLocaleString()+' scans'}}}} }},
+      scales: {{ x:{{grid:{{color:'#F1F5F9'}},ticks:{{font:{{size:9}},color:'#94A3B8'}},beginAtZero:true}},
+                 y:{{grid:{{display:false}},ticks:{{font:{{size:9}},color:'#64748B'}}}} }} }}
+  }});
+
+  // Zendesk charts — initialized empty; applyFilters() will populate them with the correct date range
+  const ZD_SEV_COLORS_INIT = {{'Normal':'#3B82F6','Low':'#10B981','High':'#F59E0B','Urgent':'#EF4444','Critical':'#DC2626'}};
+  CHARTS.zdSeverity = new Chart(document.getElementById('ch-zd-severity'), {{
+    type: 'pie',
+    data: {{ labels: [], datasets: [{{ data: [], backgroundColor: [], borderColor: [], borderWidth: 2 }}] }},
+    options: {{ responsive:true, maintainAspectRatio:false,
+      plugins: {{ legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
+        tooltip:{{callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed+' ticket'+(ctx.parsed!==1?'s':'')}}}} }} }}
+  }});
+  CHARTS.tickets = new Chart(document.getElementById('ch-tickets'), {{
+    type: 'doughnut',
+    data: {{ labels: [], datasets: [{{ data: [], backgroundColor: [], borderColor: [], borderWidth: 2 }}] }},
+    options: {{ responsive:true, maintainAspectRatio:false, cutout:'55%',
+      plugins: {{ legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
+        tooltip:{{backgroundColor:'#1E293B',callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed+' ticket'+(ctx.parsed!==1?'s':'')}}}} }} }}
   }});
 }}
 
@@ -887,182 +847,193 @@ let acctSort = {{key:'total_scans', dir:-1}};
 let filteredDaily    = [...DAILY_ROWS];
 let filteredDetail   = [...DETAIL_ROWS];
 let filteredAccounts = [...ACCOUNT_ROWS];
+let dropTenant = null; // tenant name with biggest scan drop
 
-// ── Chart update — receives pre-filtered daily rows from applyFilters ─────────
-function updateCharts(filteredDaily) {{
+// ── Update charts ──────────────────────────────────────────────────────────────
+function updateCharts() {{
   const [startDate, endDate] = getDateRange();
 
   // SDK type pie
   const sdkTypeAgg = {{}};
   filteredDaily.forEach(r => {{ sdkTypeAgg[r.sdkType] = (sdkTypeAgg[r.sdkType]||0) + r.scans; }});
-  const sortedTypes = Object.entries(sdkTypeAgg).sort((a,b) => b[1]-a[1]);
-  CHARTS.sdkType.data.labels = sortedTypes.map(([k]) => k);
-  CHARTS.sdkType.data.datasets[0].data = sortedTypes.map(([,v]) => v);
-  CHARTS.sdkType.data.datasets[0].backgroundColor = sortedTypes.map((_,i) => CC[i%CC.length]+'CC');
-  CHARTS.sdkType.data.datasets[0].borderColor = sortedTypes.map((_,i) => CC[i%CC.length]);
+  const sortedTypes = Object.entries(sdkTypeAgg).sort((a,b)=>b[1]-a[1]);
+  CHARTS.sdkType.data.labels   = sortedTypes.map(([k])=>k);
+  CHARTS.sdkType.data.datasets[0].data = sortedTypes.map(([,v])=>v);
+  CHARTS.sdkType.data.datasets[0].backgroundColor = sortedTypes.map((_,i)=>CC[i%CC.length]+'CC');
+  CHARTS.sdkType.data.datasets[0].borderColor = sortedTypes.map((_,i)=>CC[i%CC.length]);
   CHARTS.sdkType.update();
 
-  // SDK type+variant bar
+  // SDK type + platform bar
   const sdkTVAgg = {{}};
   filteredDaily.forEach(r => {{
-    const variant = r.sdkVariant || '\u2014';
-    const key = r.sdkType + ' / ' + variant;
+    const key = r.sdkType + ' / ' + (r.platform||'—');
     sdkTVAgg[key] = (sdkTVAgg[key]||0) + r.scans;
   }});
-  const sortedTV = Object.entries(sdkTVAgg).sort((a,b) => b[1]-a[1]);
-  CHARTS.sdkTV.data.labels = sortedTV.map(([k]) => k);
-  CHARTS.sdkTV.data.datasets[0].data = sortedTV.map(([,v]) => v);
-  CHARTS.sdkTV.data.datasets[0].backgroundColor = sortedTV.map((_,i) => CC[i%CC.length]+'BB');
-  CHARTS.sdkTV.data.datasets[0].borderColor = sortedTV.map((_,i) => CC[i%CC.length]);
+  const sortedTV = Object.entries(sdkTVAgg).sort((a,b)=>b[1]-a[1]);
+  CHARTS.sdkTV.data.labels = sortedTV.map(([k])=>k);
+  CHARTS.sdkTV.data.datasets[0].data = sortedTV.map(([,v])=>v);
+  CHARTS.sdkTV.data.datasets[0].backgroundColor = sortedTV.map((_,i)=>CC[i%CC.length]+'BB');
+  CHARTS.sdkTV.data.datasets[0].borderColor = sortedTV.map((_,i)=>CC[i%CC.length]);
   CHARTS.sdkTV.update();
 
-  // Line charts — daily tenants / users / scans (x-axis labels match date range)
+  // Line charts
   const daily = computeDaily(filteredDaily, startDate, endDate);
   CHARTS.tenants.data.labels = daily.labels;
   CHARTS.tenants.data.datasets[0].data = daily.tenants;
-  CHARTS.users.data.labels = daily.labels;
-  CHARTS.users.data.datasets[0].data = daily.users;
   CHARTS.scans.data.labels = daily.labels;
   CHARTS.scans.data.datasets[0].data = daily.scans;
   CHARTS.tenants.update();
-  CHARTS.users.update();
   CHARTS.scans.update();
-
-  // MFA trend line (Coralogix MFA-only users, responds to date range)
-  if (CHARTS.mfaTrend) {{
-    const mfaRows  = filteredDaily.filter(r => !r.isInternal && r.sdkType === 'MFA');
-    const mfaDaily = computeDaily(mfaRows, startDate, endDate);
-    CHARTS.mfaTrend.data.labels = mfaDaily.labels;
-    CHARTS.mfaTrend.data.datasets[0].data = mfaDaily.users;
-    CHARTS.mfaTrend.update();
-  }}
 }}
 
-// ── Filters ───────────────────────────────────────────────────────────────────
+// ── Apply filters ─────────────────────────────────────────────────────────────
 function applyFilters() {{
   const product      = document.getElementById('f-product').value;
   const tenant       = document.getElementById('f-tenant').value;
   const sdk          = document.getElementById('f-sdk').value;
   const showInternal = document.getElementById('f-internals').value === 'true';
   const se           = document.getElementById('f-se').value;
+  const noWeekends   = document.getElementById('f-no-weekends').value === 'exclude';
   const [startDate, endDate] = getDateRange();
 
-  // Single filtered view of DAILY_ROWS — source of truth for everything below
   filteredDaily = DAILY_ROWS.filter(r => {{
     if (r.date < startDate || r.date > endDate) return false;
+    if (noWeekends && isWeekend(r.date)) return false;
     if (!showInternal && r.isInternal) return false;
     if (tenant  !== 'all' && r.tenantName !== tenant) return false;
     if (sdk     !== 'all' && r.sdkType   !== sdk)    return false;
     if (product === 'mfa' && r.sdkType   !== 'MFA')  return false;
     if (product === 'sdk' && r.sdkType   === 'MFA')  return false;
-    if (se !== 'all' && r.se !== se) return false;
+    if (se !== 'all' && r.se !== se)                  return false;
     return true;
   }});
 
-  // Re-aggregate detail rows (per tenant + userId) from filteredDaily
-  const detMap = {{}};
-  filteredDaily.forEach(function(r) {{
-    const key = r.tenantName + '|' + (r.userId || '');
-    if (!detMap[key]) {{
-      detMap[key] = {{
-        tenantName: r.tenantName, userId: r.userId,
-        sdkTypes: [], sdkType: r.sdkType,
-        scans: 0, total_issues: 0, critical_issues: 0,
-        se: r.se, owner: r.owner, tam: r.tam, is_internal: r.isInternal
-      }};
-    }}
-    if (detMap[key].sdkTypes.indexOf(r.sdkType) < 0) detMap[key].sdkTypes.push(r.sdkType);
-    detMap[key].scans           += r.scans;
-    detMap[key].total_issues    += (r.total_issues || 0);
-    detMap[key].critical_issues += (r.critical_issues || 0);
-  }});
-  filteredDetail = Object.values(detMap);
-  filteredDetail.forEach(function(d) {{
-    d.sdkTypes.sort();
-    d.sdkType = d.sdkTypes.join(', ');
+  // Compute previous-period rows for drop detection
+  const [prevStart, prevEnd] = getPrevDateRange(startDate, endDate);
+  const prevRows = DAILY_ROWS.filter(r => {{
+    if (r.date < prevStart || r.date > prevEnd) return false;
+    if (noWeekends && isWeekend(r.date)) return false;
+    if (!showInternal && r.isInternal) return false;
+    if (product === 'mfa' && r.sdkType !== 'MFA') return false;
+    if (product === 'sdk' && r.sdkType === 'MFA') return false;
+    return true;
   }});
 
-  // Re-aggregate account rows (per tenant) from filteredDaily
+  // Aggregate current and previous period scans by tenant
+  const currScans = {{}}, prevScans = {{}};
+  filteredDaily.forEach(r => {{ currScans[r.tenantName] = (currScans[r.tenantName]||0) + r.scans; }});
+  prevRows.forEach(r => {{  prevScans[r.tenantName] = (prevScans[r.tenantName]||0) + r.scans; }});
+
+  // Find tenant with biggest % drop (only where prev > 0 and has current data)
+  let biggestDrop = 0; dropTenant = null;
+  Object.keys(currScans).forEach(name => {{
+    if (INTERNALS.has(name)) return;
+    const cur  = currScans[name] || 0;
+    const prev = prevScans[name] || 0;
+    if (prev > 100) {{ // only meaningful if previously had significant activity
+      const drop = (prev - cur) / prev;
+      if (drop > biggestDrop) {{ biggestDrop = drop; dropTenant = name; }}
+    }}
+  }});
+
+  // Re-aggregate account rows from filteredDaily
   const acctMap = {{}};
-  filteredDaily.forEach(function(r) {{
+  filteredDaily.forEach(r => {{
     if (!acctMap[r.tenantName]) {{
       const m = ACCT_META[r.tenantName] || {{}};
       acctMap[r.tenantName] = {{
         tenantName:    r.tenantName,
         total_scans:   0,
-        latest_scan:   m.latest_scan   || '\u2014',
-        owner:         r.owner         || '\u2014',
-        se:            r.se            || '\u2014',
-        tam:           r.tam           || '\u2014',
+        latest_scan:   m.latest_scan   || '—',
+        owner:         r.owner         || '—',
+        se:            r.se            || '—',
+        tam:           (m.tam)         || '—',
         tickets_month: m.tickets_month || 0,
         is_internal:   r.isInternal,
         is_new:        m.is_new        || false,
-        renewal:       m.renewal       || null
+        renewal:       m.renewal       || null,
+        prev_scans:    prevScans[r.tenantName] || 0,
       }};
     }}
     acctMap[r.tenantName].total_scans += r.scans;
   }});
   filteredAccounts = Object.values(acctMap);
 
-  // Show/hide MFA Feature Activity section based on product filter
-  const mfaSection = document.getElementById('mfa-section');
-  if (mfaSection) mfaSection.style.display = product === 'sdk' ? 'none' : '';
+  // Detail table uses DETAIL_ROWS filtered by product/tenant/sdk/se only (not date)
+  filteredDetail = DETAIL_ROWS.filter(r => {{
+    if (!showInternal && r.is_internal) return false;
+    if (tenant  !== 'all' && r.tenantName !== tenant) return false;
+    if (product === 'mfa' && !r.sdkTypes.includes('MFA')) return false;
+    if (product === 'sdk' && r.sdkTypes.length === 1 && r.sdkTypes[0] === 'MFA') return false;
+    if (sdk     !== 'all' && !r.sdkTypes.includes(sdk)) return false;
+    if (se      !== 'all' && r.se !== se) return false;
+    return true;
+  }});
 
   detPage = 0; acctPage = 0;
-  updateKPIs();
-  updateCharts(filteredDaily);
+  updateKPIs(startDate, endDate);
+  updateCharts();
+  updateZendeskCharts(startDate, endDate, noWeekends);
+  updateHighlights(startDate, endDate);
   renderAccounts();
   renderDetail();
 }}
 
 function resetFilters() {{
-  ['f-product','f-tenant','f-sdk','f-date','f-internals','f-se'].forEach(id => {{
+  ['f-product','f-tenant','f-sdk','f-date','f-internals','f-se','f-no-weekends'].forEach(id => {{
     const el = document.getElementById(id); if (el) el.selectedIndex = 0;
   }});
-  document.getElementById('custom-date-wrap').style.display = 'none';
+  const wrap = document.getElementById('custom-date-wrap');
+  if (wrap) wrap.style.display = 'none';
   document.getElementById('f-date-from').value = DATA_START;
   document.getElementById('f-date-to').value   = DATA_END;
   applyFilters();
 }}
 
-// ── KPIs — computed directly from filteredDaily (same source as charts) ───────
-function updateKPIs() {{
-  const rows    = filteredDaily;
-  const tenantSet = {{}}, userSet = {{}};
-  let scans = 0, issues = 0, crit = 0;
-  rows.forEach(function(r) {{
-    tenantSet[r.tenantName] = 1;
-    if (r.userId) userSet[r.userId] = 1;
-    scans  += r.scans;
-    issues += (r.total_issues    || 0);
-    crit   += (r.critical_issues || 0);
+// ── KPIs ──────────────────────────────────────────────────────────────────────
+function updateKPIs(startDate, endDate) {{
+  const tenantSet = {{}};
+  let scans = 0;
+  filteredDaily.forEach(r => {{
+    if (!r.isInternal) tenantSet[r.tenantName] = 1;
+    scans += r.scans;
   }});
-  const tenants = Object.keys(tenantSet).length;
-  const users   = Object.keys(userSet).length;
-
-  document.getElementById('k-tenants').textContent = tenants;
-  document.getElementById('k-users').textContent   = users;
+  document.getElementById('k-tenants').textContent = Object.keys(tenantSet).length;
   document.getElementById('k-scans').textContent   = scans.toLocaleString();
-  document.getElementById('k-issues').textContent  = scans ? (issues/scans).toFixed(1) : '0';
-  document.getElementById('k-crit').textContent    = scans ? (crit/scans).toFixed(1)   : '0';
 
-  // Update KPI subtitles to reflect active date range
-  const [s, e] = getDateRange();
-  const rangeLabel = (s === DATE_KEYS[0] && e === DATE_KEYS[DATE_KEYS.length-1])
-    ? 'Last 14d · excl. internals'
-    : s + ' \u2013 ' + e + ' · excl. internals';
+  const rangeLabel = startDate + ' – ' + endDate;
   const sub1 = document.getElementById('k-tenants-sub');
   const sub2 = document.getElementById('k-scans-sub');
-  if (sub1) sub1.textContent = rangeLabel;
+  if (sub1) sub1.textContent = rangeLabel + ' · excl. internals';
   if (sub2) sub2.textContent = rangeLabel;
+}}
+
+// ── Highlights — biggest drop ─────────────────────────────────────────────────
+function updateHighlights(startDate, endDate) {{
+  const tenantEl  = document.getElementById('hl-drop-tenant');
+  const detailEl  = document.getElementById('hl-drop-detail');
+  if (!tenantEl) return;
+
+  if (!dropTenant) {{
+    tenantEl.textContent = '—';
+    detailEl.textContent = 'No significant drop detected in this period';
+    return;
+  }}
+
+  // Find the drop details from filteredAccounts
+  const acct = filteredAccounts.find(a => a.tenantName === dropTenant);
+  if (!acct) {{ tenantEl.textContent = dropTenant; detailEl.textContent = ''; return; }}
+
+  const prev = acct.prev_scans || 0;
+  const curr = acct.total_scans || 0;
+  const pct  = prev > 0 ? Math.round((prev - curr) / prev * 100) : 0;
+  tenantEl.textContent = dropTenant;
+  detailEl.textContent = curr.toLocaleString() + ' scans vs. ' + prev.toLocaleString() + ' prev period (−' + pct + '%)';
 }}
 
 // ── Render helpers ────────────────────────────────────────────────────────────
 function dash(v) {{
-  return (v && v !== '\u2014') ? v : '<span class="b-none">\u2014</span>';
-}}
-function sdkBadge(t) {{
-  return '<span class="badge ' + (t==='MFA'?'b-mfa':'b-sdk') + '">' + t + '</span>';
+  return (v && v !== '—') ? v : '<span class="b-none">—</span>';
 }}
 
 // ── Accounts table ────────────────────────────────────────────────────────────
@@ -1086,20 +1057,33 @@ function renderAccounts() {{
   acctPage = Math.min(acctPage, pages-1);
   const page = sorted.slice(acctPage*PER_PAGE, (acctPage+1)*PER_PAGE);
 
-  document.getElementById('acct-body').innerHTML = page.map(r => `
-    <tr>
-      <td><strong>${{r.tenantName}}</strong></td>
-      <td class="num">${{r.total_scans.toLocaleString()}}</td>
-      <td style="color:var(--muted);font-size:11px">${{r.latest_scan||'\u2014'}}</td>
+  document.getElementById('acct-body').innerHTML = page.map(r => {{
+    const isDrop = r.tenantName === dropTenant && !r.is_new;
+    const rowClass = r.is_new ? 'row-new' : (r.renewal ? 'row-renewal' : (isDrop ? 'row-drop' : ''));
+
+    // Calculate scan delta vs prev period
+    let deltaHtml = '';
+    if (r.prev_scans > 0) {{
+      const pct = Math.round((r.total_scans - r.prev_scans) / r.prev_scans * 100);
+      const sign = pct >= 0 ? '+' : '';
+      const color = pct >= 0 ? 'var(--green)' : 'var(--red)';
+      deltaHtml = `<span style="font-size:10px;color:${{color}};margin-left:6px">${{sign}}${{pct}}%</span>`;
+    }}
+
+    return `<tr class="${{rowClass}}">
+      <td><strong>${{r.tenantName}}</strong>${{isDrop ? ' <span class="badge b-drop" title="Biggest drop vs prior period">↓ Drop</span>' : ''}}</td>
+      <td class="num">${{r.total_scans.toLocaleString()}}${{deltaHtml}}</td>
+      <td style="color:var(--muted);font-size:11px">${{r.latest_scan||'—'}}</td>
       <td>${{dash(r.owner)}}</td>
       <td>${{dash(r.se)}}</td>
       <td>${{dash(r.tam)}}</td>
       <td>
-        ${{r.is_new     ? '<span class="badge b-new">New</span> '     : ''}}
-        ${{r.renewal    ? '<span class="badge b-renewal">Renewal</span> ' : ''}}
+        ${{r.is_new    ? '<span class="badge b-new">New</span> '      : ''}}
+        ${{r.renewal   ? '<span class="badge b-renewal">Renewal</span> ' : ''}}
         ${{r.is_internal? '<span class="badge b-int">Internal</span>' : ''}}
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }}).join('');
 
   document.getElementById('acct-info').textContent = total + ' account' + (total!==1?'s':'');
   document.getElementById('acct-pages').textContent = 'Page ' + (acctPage+1) + ' / ' + pages;
@@ -1131,10 +1115,9 @@ function renderDetail() {{
   document.getElementById('det-body').innerHTML = page.map(r => `
     <tr>
       <td><strong>${{r.tenantName}}</strong></td>
-      <td class="mono">${{r.userId || '<span class="b-none">\u2014</span>'}}</td>
+      <td class="mono">${{r.userId || '<span class="b-none">—</span>'}}</td>
+      <td>${{r.sdkTypes.map(t=>'<span class="badge '+(t==='MFA'?'b-mfa':'b-sdk')+'">'+t+'</span>').join(' ')}}</td>
       <td class="num">${{r.scans.toLocaleString()}}</td>
-      <td class="num-muted">${{r.total_issues.toLocaleString()}}</td>
-      <td class="num-muted" style="color:${{r.critical_issues>0?'var(--red)':'inherit'}}">${{r.critical_issues.toLocaleString()}}</td>
     </tr>`).join('');
 
   document.getElementById('det-info').textContent = total + ' row' + (total!==1?'s':'');
@@ -1155,8 +1138,8 @@ function exportAccounts() {{
   a.download='accounts_'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
 }}
 function exportDetail() {{
-  const h = ['Tenant','User','Scans','Total Issues','Critical Issues'];
-  const d = filteredDetail.map(r=>[r.tenantName,r.userId,r.scans,r.total_issues,r.critical_issues]);
+  const h = ['Tenant','User','SDK Types','Scans'];
+  const d = filteredDetail.map(r=>[r.tenantName,r.userId,r.sdkType,r.scans]);
   const a = document.createElement('a'); a.href='data:text/csv,'+encodeURIComponent(toCSV(h,d));
   a.download='users_'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
 }}
