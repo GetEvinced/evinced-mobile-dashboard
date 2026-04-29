@@ -80,40 +80,41 @@ SDK_PRODUCT_TYPES = {"Espresso", "WebdriverIO", "XCUITest", "Appium", "MCP Serve
 
 # ── HubSpot data ───────────────────────────────────────────────────────────────
 HUBSPOT = {
-    "Amazon Blink":         {"owner": "—",               "se": "Dominic Lucia",    "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "tickets_all": 2,  "tickets_month": 0},
-    "American Airlines":    {"owner": "Jacob Hume",      "se": "Kevin Berg",       "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "tickets_all": 1,  "tickets_month": 0},
-    "Auticon":              {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "—",             "is_new": False, "renewal": "2026-05-31", "tickets_all": 1,  "tickets_month": 0},
-    "BECU":                 {"owner": "—",               "se": "Dominic Lucia",    "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 1,  "tickets_month": 0},
-    "Bank of Ireland":      {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "tickets_all": 1,  "tickets_month": 0},
-    "Bell Media":           {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 1,  "tickets_month": 1},
-    "Booking":              {"owner": "Liam Ingleby",    "se": "Kevin Berg",       "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "tickets_all": 1,  "tickets_month": 0},
-    "Canal Plus":           {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Capital One":          {"owner": "Navin Thadani",   "se": "Kevin Berg",       "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "tickets_all": 4,  "tickets_month": 0},
-    "Charter":              {"owner": "—",               "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Cigna":                {"owner": "Skye Hollins",    "se": "Justin Schaeffer", "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "tickets_all": 5,  "tickets_month": 0},
-    "Comcast":              {"owner": "Jacob Hume",      "se": "Kevin Berg",       "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Costco":               {"owner": "—",               "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "CreditOne":            {"owner": "—",               "se": "Dominic Lucia",    "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Evinced Demo Account": {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Evinced Dev Team":     {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Expedia Group":        {"owner": "—",               "se": "Dominic Lucia",    "tam": "—",             "is_new": True,  "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Fidelity Investments": {"owner": "—",               "se": "Dominic Lucia",    "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 4,  "tickets_month": 0},
-    "GD":                   {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "HCAHealthcare":        {"owner": "—",               "se": "Kevin Berg",       "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Huntington Bank":      {"owner": "Skye Hollins",    "se": "Kevin Berg",       "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Hyatt":                {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Lufthansa":            {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Maximus":              {"owner": "Amandeep Dhillon","se": "Justin Schaeffer", "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Microsoft":            {"owner": "Ryan Patterson",  "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "NatWest":              {"owner": "Liam Ingleby",    "se": "Chris Keene",      "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Progressive":          {"owner": "Jacob Hume",      "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "SAP":                  {"owner": "Sam O'Meara",     "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 1,  "tickets_month": 0},
-    "Sainsburys":           {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Sky UK":               {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 3,  "tickets_month": 0},
-    "Subway":               {"owner": "Skye Hollins",    "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 1,  "tickets_month": 1},
-    "Verizon":              {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Yahoo":                {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
-    "Zalando":              {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0},
+    # contract_start / contract_end: fill in from HubSpot deal dates
+    "Amazon Blink":         {"owner": "—",               "se": "Dominic Lucia",    "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 2,  "tickets_month": 0},
+    "American Airlines":    {"owner": "Jacob Hume",      "se": "Kevin Berg",       "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 1,  "tickets_month": 0},
+    "Auticon":              {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "—",             "is_new": False, "renewal": "2026-05-31", "contract_start": None,         "contract_end": "2026-05-31", "tickets_all": 1,  "tickets_month": 0},
+    "BECU":                 {"owner": "—",               "se": "Dominic Lucia",    "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 1,  "tickets_month": 0},
+    "Bank of Ireland":      {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 1,  "tickets_month": 0},
+    "Bell Media":           {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 1,  "tickets_month": 1},
+    "Booking":              {"owner": "Liam Ingleby",    "se": "Kevin Berg",       "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 1,  "tickets_month": 0},
+    "Canal Plus":           {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Capital One":          {"owner": "Navin Thadani",   "se": "Kevin Berg",       "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 4,  "tickets_month": 0},
+    "Charter":              {"owner": "—",               "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Cigna":                {"owner": "Skye Hollins",    "se": "Justin Schaeffer", "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 5,  "tickets_month": 0},
+    "Comcast":              {"owner": "Jacob Hume",      "se": "Kevin Berg",       "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Costco":               {"owner": "—",               "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "CreditOne":            {"owner": "—",               "se": "Dominic Lucia",    "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Evinced Demo Account": {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Evinced Dev Team":     {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Expedia Group":        {"owner": "—",               "se": "Dominic Lucia",    "tam": "—",             "is_new": True,  "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Fidelity Investments": {"owner": "—",               "se": "Dominic Lucia",    "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 4,  "tickets_month": 0},
+    "GD":                   {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "HCAHealthcare":        {"owner": "—",               "se": "Kevin Berg",       "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Huntington Bank":      {"owner": "Skye Hollins",    "se": "Kevin Berg",       "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Hyatt":                {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Lufthansa":            {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Maximus":              {"owner": "Amandeep Dhillon","se": "Justin Schaeffer", "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Microsoft":            {"owner": "Ryan Patterson",  "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "NatWest":              {"owner": "Liam Ingleby",    "se": "Chris Keene",      "tam": "Roei Ben Haim", "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Progressive":          {"owner": "Jacob Hume",      "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "SAP":                  {"owner": "Sam O'Meara",     "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 1,  "tickets_month": 0},
+    "Sainsburys":           {"owner": "Julian Miller",   "se": "Chris Keene",      "tam": "Gilad Aziza",   "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Sky UK":               {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 3,  "tickets_month": 0},
+    "Subway":               {"owner": "Skye Hollins",    "se": "David Martin",     "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 1,  "tickets_month": 1},
+    "Verizon":              {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Yahoo":                {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
+    "Zalando":              {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "contract_start": None,         "contract_end": None,         "tickets_all": 0,  "tickets_month": 0},
 }
 
 # ── Zendesk — live data ────────────────────────────────────────────────────────
@@ -220,16 +221,19 @@ account_rows = []
 for tenant, total in sorted(acct_agg.items(), key=lambda x: -x[1]):
     hs = HUBSPOT.get(tenant, {})
     account_rows.append({
-        "tenantName":    tenant,
-        "total_scans":   total,
-        "latest_scan":   latest_scan.get(tenant, "—"),
-        "owner":         hs.get("owner", "—"),
-        "se":            hs.get("se", "—"),
-        "tam":           hs.get("tam", "—"),
-        "tickets_month": hs.get("tickets_month", 0),
-        "is_internal":   tenant in INTERNALS,
-        "is_new":        hs.get("is_new", False),
-        "renewal":       hs.get("renewal"),
+        "tenantName":      tenant,
+        "total_scans":     total,
+        "latest_scan":     latest_scan.get(tenant, "—"),
+        "owner":           hs.get("owner", "—"),
+        "se":              hs.get("se", "—"),
+        "tam":             hs.get("tam", "—"),
+        "tickets_month":   hs.get("tickets_month", 0),
+        "tickets_all":     hs.get("tickets_all", 0),
+        "contract_start":  hs.get("contract_start") or "—",
+        "contract_end":    hs.get("contract_end") or "—",
+        "is_internal":     tenant in INTERNALS,
+        "is_new":          hs.get("is_new", False),
+        "renewal":         hs.get("renewal"),
     })
 
 # ── Filter options ─────────────────────────────────────────────────────────────
@@ -294,6 +298,15 @@ zd_tickets_js      = json.dumps(ZD_TICKETS)
 zd_total           = ZD_TOTAL
 zd_is_real         = zendesk_severity is not None
 
+# Per-tenant ticket counts from live Zendesk data
+from collections import Counter as _Counter
+zd_tenant_counts = dict(_Counter(
+    t.get("organization", "").strip()
+    for t in _zd_tickets_raw
+    if t.get("organization", "").strip()
+))
+zd_tenant_counts_js = json.dumps(zd_tenant_counts)
+
 # New and renewal tenants for highlights
 new_tenants     = sorted(t for t, v in HUBSPOT.items() if v.get("is_new"))
 renewal_tenants = sorted((t, v["renewal"]) for t, v in HUBSPOT.items() if v.get("renewal"))
@@ -306,6 +319,7 @@ html = f"""<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mobile Products Dashboard | Evinced</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
   <style>
     *, *::before, *::after {{ box-sizing:border-box; margin:0; padding:0; }}
     :root {{
@@ -334,7 +348,7 @@ html = f"""<!DOCTYPE html>
     .filters-header {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }}
     .filters-label {{ font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; }}
     .btn-reset {{ font-size:11px; color:var(--primary); background:none; border:none; cursor:pointer; font-family:inherit; }}
-    .filters-grid {{ display:grid; grid-template-columns:repeat(7,1fr); gap:10px; align-items:start; }}
+    .filters-grid {{ display:grid; grid-template-columns:repeat(8,1fr); gap:10px; align-items:start; }}
     .fg label {{ display:block; font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px; }}
     .fg select {{ width:100%; padding:6px 24px 6px 9px; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--text); background:#FAFAFA; font-family:inherit; outline:none; appearance:none;
       background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394A3B8'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 8px center; }}
@@ -498,6 +512,14 @@ html = f"""<!DOCTYPE html>
           <option value="include">Include weekends</option>
           <option value="exclude">Exclude weekends</option>
         </select></div>
+      <div class="fg"><label>Min Tickets</label>
+        <select id="f-min-tickets" onchange="applyFilters()">
+          <option value="0">Any</option>
+          <option value="1">1+ tickets</option>
+          <option value="3">3+ tickets</option>
+          <option value="5">5+ tickets</option>
+          <option value="10">10+ tickets</option>
+        </select></div>
     </div>
   </div>
 
@@ -529,7 +551,7 @@ html = f"""<!DOCTYPE html>
     <div class="kpi c-indigo"><div class="kpi-label">Total Scans</div><div class="kpi-val" id="k-scans">{total_scans:,}</div><div class="kpi-sub" id="k-scans-sub">selected period</div></div>
     <div class="kpi c-green"> <div class="kpi-label">New Tenants</div><div class="kpi-val">{new_count}</div><div class="kpi-sub">MFA/Mobile deal · closed this month</div></div>
     <div class="kpi c-violet"><div class="kpi-label">Upcoming Renewals</div><div class="kpi-val">{renewal_count}</div><div class="kpi-sub">deal ending Apr–May 2026</div></div>
-    <div class="kpi c-purple"><div class="kpi-label">Support Tickets</div><div class="kpi-val">{CURRENT_MONTH_TICKETS}</div><div class="kpi-sub">Zendesk · mobile/MFA · this month</div></div>
+    <div class="kpi c-purple"><div class="kpi-label">Support Tickets</div><div class="kpi-val" id="k-tickets">{CURRENT_MONTH_TICKETS}</div><div class="kpi-sub" id="k-tickets-sub">Zendesk · mobile/MFA · this month</div></div>
   </div>
 
   <!-- CHARTS: row 1 — Active Tenants · Total Scans · SDK Type Distribution -->
@@ -583,6 +605,9 @@ html = f"""<!DOCTYPE html>
           <th onclick="sortAcct('tenantName')">Tenant ↕</th>
           <th onclick="sortAcct('total_scans')">Total Scans ↕</th>
           <th onclick="sortAcct('latest_scan')">Latest Scan ↕</th>
+          <th onclick="sortAcct('contract_start')">Contract Start ↕</th>
+          <th onclick="sortAcct('contract_end')">Contract End ↕</th>
+          <th onclick="sortAcct('zd_tickets')">Tickets ↕</th>
           <th>Contact Owner</th>
           <th>SE</th>
           <th>TAM</th>
@@ -620,6 +645,7 @@ html = f"""<!DOCTYPE html>
           <th onclick="sortDet('userId')">User ↕</th>
           <th onclick="sortDet('sdkType')">SDK Type ↕</th>
           <th onclick="sortDet('scans')">Scans ↕</th>
+          <th onclick="sortDet('lastScan')">Last Scan ↕</th>
         </tr></thead>
         <tbody id="det-body"></tbody>
       </table>
@@ -642,9 +668,10 @@ const DATE_KEYS     = {date_keys_js};
 const DATE_LABELS   = {date_labels_js};
 const SDK_TYPE_PIE  = {sdk_type_pie_js};
 const SDK_TV_LIST   = {sdk_tv_js};
-const DETAIL_ROWS   = {detail_rows_js};
-const RAW_USER_ROWS = {raw_user_rows_js};
-const ACCOUNT_ROWS  = {account_rows_js};
+const DETAIL_ROWS      = {detail_rows_js};
+const RAW_USER_ROWS    = {raw_user_rows_js};
+const ACCOUNT_ROWS     = {account_rows_js};
+const ZD_TENANT_COUNTS = {zd_tenant_counts_js};
 const INTERNALS        = new Set({internals_js});
 const SDK_PRODUCTS     = new Set({sdk_product_js});
 const ZD_TICKETS       = {zd_tickets_js};
@@ -653,9 +680,18 @@ const DATA_END      = {json.dumps(data_end)};
 
 const PER_PAGE = 10;
 
+// Register datalabels plugin for pie/doughnut charts
+Chart.register(ChartDataLabels);
+
 // ACCT_META for static HubSpot-sourced fields
 const ACCT_META = {{}};
 ACCOUNT_ROWS.forEach(r => {{ ACCT_META[r.tenantName] = r; }});
+
+// Precompute first-scan date per tenant (for time-aware "new tenant" detection)
+const FIRST_SCAN = {{}};
+DAILY_ROWS.forEach(r => {{
+  if (!FIRST_SCAN[r.tenantName] || r.date < FIRST_SCAN[r.tenantName]) FIRST_SCAN[r.tenantName] = r.date;
+}});
 
 // ── Populate SE filter ────────────────────────────────────────────────────────
 (function() {{
@@ -822,8 +858,16 @@ function initCharts() {{
                backgroundColor: SDK_TYPE_PIE.map((_,i)=>CC[i%CC.length]+'CC'),
                borderColor:     SDK_TYPE_PIE.map((_,i)=>CC[i%CC.length]), borderWidth:2 }}] }},
     options: {{ responsive:true, maintainAspectRatio:false,
-      plugins: {{ legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
-        tooltip:{{callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed.toLocaleString()+' scans'}}}} }} }}
+      plugins: {{
+        legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
+        tooltip:{{callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed.toLocaleString()+' scans'}}}},
+        datalabels:{{ color:'#fff', font:{{size:10,weight:'bold'}}, formatter:(v,ctx)=>{{
+          const total=ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
+          const pct=Math.round(v/total*100);
+          return pct>=5 ? pct+'%\n'+v.toLocaleString() : '';
+        }}}}
+      }}
+    }}
   }});
 
   // SDK type + platform bar
@@ -841,19 +885,26 @@ function initCharts() {{
 
   // Zendesk charts — initialized empty; applyFilters() will populate them with the correct date range
   const ZD_SEV_COLORS_INIT = {{'Normal':'#3B82F6','Low':'#10B981','High':'#F59E0B','Urgent':'#EF4444','Critical':'#DC2626'}};
+  const pieDLOpts = {{ color:'#fff', font:{{size:10,weight:'bold'}}, formatter:(v,ctx)=>{{
+    const total=ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
+    const pct=Math.round(v/total*100);
+    return pct>=8 ? pct+'%\n'+v : '';
+  }}}};
   CHARTS.zdSeverity = new Chart(document.getElementById('ch-zd-severity'), {{
     type: 'pie',
     data: {{ labels: [], datasets: [{{ data: [], backgroundColor: [], borderColor: [], borderWidth: 2 }}] }},
     options: {{ responsive:true, maintainAspectRatio:false,
       plugins: {{ legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
-        tooltip:{{callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed+' ticket'+(ctx.parsed!==1?'s':'')}}}} }} }}
+        tooltip:{{callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed+' ticket'+(ctx.parsed!==1?'s':'')}}}},
+        datalabels: pieDLOpts }} }}
   }});
   CHARTS.tickets = new Chart(document.getElementById('ch-tickets'), {{
     type: 'doughnut',
     data: {{ labels: [], datasets: [{{ data: [], backgroundColor: [], borderColor: [], borderWidth: 2 }}] }},
     options: {{ responsive:true, maintainAspectRatio:false, cutout:'55%',
       plugins: {{ legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
-        tooltip:{{backgroundColor:'#1E293B',callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed+' ticket'+(ctx.parsed!==1?'s':'')}}}} }} }}
+        tooltip:{{backgroundColor:'#1E293B',callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed+' ticket'+(ctx.parsed!==1?'s':'')}}}},
+        datalabels: pieDLOpts }} }}
   }});
 }}
 
@@ -911,6 +962,7 @@ function applyFilters() {{
   const showInternal = document.getElementById('f-internals').value === 'true';
   const se           = document.getElementById('f-se').value;
   const noWeekends   = document.getElementById('f-no-weekends').value === 'exclude';
+  const minTickets   = parseInt(document.getElementById('f-min-tickets').value) || 0;
   const [startDate, endDate] = getDateRange();
 
   filteredDaily = DAILY_ROWS.filter(r => {{
@@ -958,23 +1010,27 @@ function applyFilters() {{
   filteredDaily.forEach(r => {{
     if (!acctMap[r.tenantName]) {{
       const m = ACCT_META[r.tenantName] || {{}};
+      const zdCount = ZD_TENANT_COUNTS[r.tenantName] || 0;
       acctMap[r.tenantName] = {{
-        tenantName:    r.tenantName,
-        total_scans:   0,
-        latest_scan:   m.latest_scan   || '—',
-        owner:         r.owner         || '—',
-        se:            r.se            || '—',
-        tam:           (m.tam)         || '—',
-        tickets_month: m.tickets_month || 0,
-        is_internal:   r.isInternal,
-        is_new:        m.is_new        || false,
-        renewal:       m.renewal       || null,
-        prev_scans:    prevScans[r.tenantName] || 0,
+        tenantName:     r.tenantName,
+        total_scans:    0,
+        latest_scan:    m.latest_scan    || '—',
+        owner:          r.owner          || '—',
+        se:             r.se             || '—',
+        tam:            m.tam            || '—',
+        tickets_month:  m.tickets_month  || 0,
+        zd_tickets:     zdCount || m.tickets_all || 0,
+        contract_start: m.contract_start || '—',
+        contract_end:   m.contract_end   || '—',
+        is_internal:    r.isInternal,
+        is_new:         m.is_new         || false,
+        renewal:        m.renewal        || null,
+        prev_scans:     prevScans[r.tenantName] || 0,
       }};
     }}
     acctMap[r.tenantName].total_scans += r.scans;
   }});
-  filteredAccounts = Object.values(acctMap);
+  filteredAccounts = Object.values(acctMap).filter(r => !minTickets || r.zd_tickets >= minTickets);
 
   // Detail table: aggregate RAW_USER_ROWS filtered by all active filters incl. date
   const rawFiltered = RAW_USER_ROWS.filter(r => {{
@@ -992,14 +1048,15 @@ function applyFilters() {{
   rawFiltered.forEach(r => {{
     const key = r.tenantName + '|||' + r.userId;
     if (!detMap[key]) {{
-      detMap[key] = {{ tenantName: r.tenantName, userId: r.userId, sdkTypesSet: new Set(), scans: 0, se: r.se, is_internal: r.is_internal }};
+      detMap[key] = {{ tenantName: r.tenantName, userId: r.userId, sdkTypesSet: new Set(), scans: 0, lastScan: '', se: r.se, is_internal: r.is_internal }};
     }}
     detMap[key].sdkTypesSet.add(r.sdkType);
     detMap[key].scans += r.scans;
+    if (r.date > detMap[key].lastScan) detMap[key].lastScan = r.date;
   }});
   filteredDetail = Object.values(detMap).map(r => {{
     const types = [...r.sdkTypesSet].sort();
-    return {{ tenantName: r.tenantName, userId: r.userId, sdkTypes: types, sdkType: types.join(', '), scans: r.scans, se: r.se, is_internal: r.is_internal }};
+    return {{ tenantName: r.tenantName, userId: r.userId, sdkTypes: types, sdkType: types.join(', '), scans: r.scans, lastScan: r.lastScan || '—', se: r.se, is_internal: r.is_internal }};
   }});
 
   detPage = 0; acctPage = 0;
@@ -1012,7 +1069,7 @@ function applyFilters() {{
 }}
 
 function resetFilters() {{
-  ['f-product','f-tenant','f-sdk','f-date','f-internals','f-se','f-no-weekends'].forEach(id => {{
+  ['f-product','f-tenant','f-sdk','f-date','f-internals','f-se','f-no-weekends','f-min-tickets'].forEach(id => {{
     const el = document.getElementById(id); if (el) el.selectedIndex = 0;
   }});
   const wrap = document.getElementById('custom-date-wrap');
@@ -1035,6 +1092,18 @@ function updateKPIs(startDate, endDate) {{
   document.getElementById('k-users').textContent   = userSet.size;
   document.getElementById('k-scans').textContent   = scans.toLocaleString();
 
+  // Support tickets KPI — reflect selected tenant if filtered
+  const selTenant = document.getElementById('f-tenant').value;
+  const zdCount = selTenant !== 'all'
+    ? (ZD_TENANT_COUNTS[selTenant] || 0)
+    : Object.values(ZD_TENANT_COUNTS).reduce((a,b)=>a+b,0);
+  const kTickets = document.getElementById('k-tickets');
+  if (kTickets) kTickets.textContent = zdCount;
+  const kTicketsSub = document.getElementById('k-tickets-sub');
+  if (kTicketsSub) kTicketsSub.textContent = selTenant !== 'all'
+    ? 'Zendesk · ' + selTenant + ' · all time'
+    : 'Zendesk · mobile/MFA · all time';
+
   const rangeLabel = startDate + ' – ' + endDate;
   const sub1 = document.getElementById('k-tenants-sub');
   const sub2 = document.getElementById('k-scans-sub');
@@ -1044,27 +1113,52 @@ function updateKPIs(startDate, endDate) {{
   if (sub3) sub3.textContent = 'Per-user scan detail · ' + rangeLabel;
 }}
 
-// ── Highlights — biggest drop ─────────────────────────────────────────────────
+// ── Highlights — time-aware ───────────────────────────────────────────────────
 function updateHighlights(startDate, endDate) {{
-  const tenantEl  = document.getElementById('hl-drop-tenant');
-  const detailEl  = document.getElementById('hl-drop-detail');
-  if (!tenantEl) return;
-
-  if (!dropTenant) {{
-    tenantEl.textContent = '—';
-    detailEl.textContent = 'No significant drop detected in this period';
-    return;
+  // ── Biggest drop ──
+  const tenantEl = document.getElementById('hl-drop-tenant');
+  const detailEl = document.getElementById('hl-drop-detail');
+  if (tenantEl) {{
+    if (!dropTenant) {{
+      tenantEl.textContent = '—';
+      detailEl.textContent = 'No significant drop detected in this period';
+    }} else {{
+      const acct = filteredAccounts.find(a => a.tenantName === dropTenant);
+      if (acct) {{
+        const prev = acct.prev_scans || 0, curr = acct.total_scans || 0;
+        const pct  = prev > 0 ? Math.round((prev - curr) / prev * 100) : 0;
+        tenantEl.textContent = dropTenant;
+        detailEl.textContent = curr.toLocaleString() + ' scans vs. ' + prev.toLocaleString() + ' prev period (−' + pct + '%)';
+      }} else {{
+        tenantEl.textContent = dropTenant; detailEl.textContent = '';
+      }}
+    }}
   }}
 
-  // Find the drop details from filteredAccounts
-  const acct = filteredAccounts.find(a => a.tenantName === dropTenant);
-  if (!acct) {{ tenantEl.textContent = dropTenant; detailEl.textContent = ''; return; }}
+  // ── New tenants — those whose first ever scan falls within selected range ──
+  const newList = document.getElementById('hl-new-list');
+  if (newList) {{
+    const newInRange = Object.entries(FIRST_SCAN)
+      .filter(([t, d]) => d >= startDate && d <= endDate && !INTERNALS.has(t))
+      .map(([t]) => t).sort();
+    newList.innerHTML = newInRange.length
+      ? newInRange.map(t => `<li>✦ ${{t}}</li>`).join('')
+      : `<li style='color:var(--faint)'>None in this period</li>`;
+  }}
 
-  const prev = acct.prev_scans || 0;
-  const curr = acct.total_scans || 0;
-  const pct  = prev > 0 ? Math.round((prev - curr) / prev * 100) : 0;
-  tenantEl.textContent = dropTenant;
-  detailEl.textContent = curr.toLocaleString() + ' scans vs. ' + prev.toLocaleString() + ' prev period (−' + pct + '%)';
+  // ── Renewals — show contracts ending within 60 days after selected end date ──
+  const renewList = document.getElementById('hl-renewal-list');
+  if (renewList) {{
+    const cutoff = new Date(endDate + 'T00:00:00');
+    cutoff.setDate(cutoff.getDate() + 60);
+    const cutoffStr = cutoff.toISOString().slice(0,10);
+    const renewInRange = ACCOUNT_ROWS
+      .filter(r => r.renewal && r.renewal >= endDate && r.renewal <= cutoffStr)
+      .map(r => [r.tenantName, r.renewal]).sort((a,b)=>a[1].localeCompare(b[1]));
+    renewList.innerHTML = renewInRange.length
+      ? renewInRange.map(([t,d]) => `<li>⏱ <strong>${{t}}</strong> <span style="color:var(--faint);font-size:10px">· ${{d}}</span></li>`).join('')
+      : `<li style='color:var(--faint)'>None in next 60 days</li>`;
+  }}
 }}
 
 // ── Render helpers ────────────────────────────────────────────────────────────
@@ -1106,10 +1200,16 @@ function renderAccounts() {{
       deltaHtml = `<span style="font-size:10px;color:${{color}};margin-left:6px">${{sign}}${{pct}}%</span>`;
     }}
 
+    const ticketHtml = r.zd_tickets > 0
+      ? `<span style="font-weight:600;color:var(--primary)">${{r.zd_tickets}}</span>`
+      : `<span class="b-none">0</span>`;
     return `<tr class="${{rowClass}}">
       <td><strong>${{r.tenantName}}</strong>${{isDrop ? ' <span class="badge b-drop" title="Biggest drop vs prior period">↓ Drop</span>' : ''}}</td>
       <td class="num">${{r.total_scans.toLocaleString()}}${{deltaHtml}}</td>
       <td style="color:var(--muted);font-size:11px">${{r.latest_scan||'—'}}</td>
+      <td style="color:var(--muted);font-size:11px">${{r.contract_start||'—'}}</td>
+      <td style="color:var(--muted);font-size:11px">${{r.contract_end||'—'}}</td>
+      <td class="num-muted">${{ticketHtml}}</td>
       <td>${{dash(r.owner)}}</td>
       <td>${{dash(r.se)}}</td>
       <td>${{dash(r.tam)}}</td>
@@ -1154,6 +1254,7 @@ function renderDetail() {{
       <td class="mono">${{r.userId || '<span class="b-none">—</span>'}}</td>
       <td>${{r.sdkTypes.map(t=>'<span class="badge '+(t==='MFA'?'b-mfa':'b-sdk')+'">'+t+'</span>').join(' ')}}</td>
       <td class="num">${{r.scans.toLocaleString()}}</td>
+      <td style="color:var(--muted);font-size:11px">${{r.lastScan||'—'}}</td>
     </tr>`).join('');
 
   document.getElementById('det-info').textContent = total + ' row' + (total!==1?'s':'');
@@ -1168,14 +1269,14 @@ function toCSV(headers, rows) {{
   return [headers.map(esc).join(','), ...rows.map(r=>r.map(esc).join(','))].join('\\n');
 }}
 function exportAccounts() {{
-  const h = ['Tenant','Total Scans','Latest Scan','Contact Owner','SE','TAM','New','Renewal'];
-  const d = filteredAccounts.map(r=>[r.tenantName,r.total_scans,r.latest_scan,r.owner,r.se,r.tam,r.is_new?'Yes':'',r.renewal||'']);
+  const h = ['Tenant','Total Scans','Latest Scan','Contract Start','Contract End','Tickets','Contact Owner','SE','TAM','New','Renewal'];
+  const d = filteredAccounts.map(r=>[r.tenantName,r.total_scans,r.latest_scan,r.contract_start||'',r.contract_end||'',r.zd_tickets||0,r.owner,r.se,r.tam,r.is_new?'Yes':'',r.renewal||'']);
   const a = document.createElement('a'); a.href='data:text/csv,'+encodeURIComponent(toCSV(h,d));
   a.download='accounts_'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
 }}
 function exportDetail() {{
-  const h = ['Tenant','User','SDK Types','Scans'];
-  const d = filteredDetail.map(r=>[r.tenantName,r.userId,r.sdkType,r.scans]);
+  const h = ['Tenant','User','SDK Types','Scans','Last Scan'];
+  const d = filteredDetail.map(r=>[r.tenantName,r.userId,r.sdkType,r.scans,r.lastScan||'']);
   const a = document.createElement('a'); a.href='data:text/csv,'+encodeURIComponent(toCSV(h,d));
   a.download='users_'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
 }}
