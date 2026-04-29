@@ -143,6 +143,22 @@ if zendesk_monthly:
 else:
     ZD_MONTH_LABELS, ZD_MONTH_VALUES = [], []
 
+# Normalize Zendesk org names → HUBSPOT tenant names
+_ZD_ORG_MAP = {
+    "amazon":               "Amazon Blink",
+    "bell":                 "Bell Media",
+    "booking.com":          "Booking",
+    "canal+":               "Canal Plus",
+    "dlh / lufthansa":      "Lufthansa",
+    "fidelity":             "Fidelity Investments",
+    "sky":                  "Sky UK",
+    "verizon wireless":     "Verizon",
+}
+
+def _normalize_zd_org(name):
+    key = (name or "").lower().strip()
+    return _ZD_ORG_MAP.get(key, name.strip() if name else "")
+
 # Build per-ticket JS array for dynamic date filtering
 ZD_TICKETS = []
 for t in _zd_tickets_raw:
@@ -154,10 +170,11 @@ for t in _zd_tickets_raw:
     has_sdk = any(k in text for k in ["sdk", "espresso", "xcui", "appium", "wdio"])
     ticket_type = "MFA" if has_mfa else ("Mobile SDK" if has_sdk else "General Mobile")
     ZD_TICKETS.append({
-        "date":     date_str,
-        "priority": (t.get("priority") or "normal").title(),
-        "type":     ticket_type,
-        "status":   t.get("status", ""),
+        "date":         date_str,
+        "priority":     (t.get("priority") or "normal").title(),
+        "type":         ticket_type,
+        "status":       t.get("status", ""),
+        "organization": _normalize_zd_org(t.get("organization") or ""),
     })
 
 # Current month ticket count from Zendesk
@@ -301,9 +318,9 @@ zd_is_real         = zendesk_severity is not None
 # Per-tenant ticket counts from live Zendesk data
 from collections import Counter as _Counter
 zd_tenant_counts = dict(_Counter(
-    t.get("organization", "").strip()
+    _normalize_zd_org(t.get("organization", ""))
     for t in _zd_tickets_raw
-    if t.get("organization", "").strip()
+    if (t.get("organization") or "").strip()
 ))
 zd_tenant_counts_js = json.dumps(zd_tenant_counts)
 
