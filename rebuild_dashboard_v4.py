@@ -355,7 +355,7 @@ html = f"""<!DOCTYPE html>
     .fg select:focus {{ border-color:var(--primary); box-shadow:0 0 0 3px rgba(109,40,217,.1); }}
     /* Highlight card */
     .highlights-card {{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:18px; }}
-    .hl-panel {{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; box-shadow:0 1px 4px rgba(0,0,0,.05); border-left:4px solid transparent; }}
+    .hl-panel {{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; box-shadow:0 1px 4px rgba(0,0,0,.05); border-left:4px solid transparent; display:flex; flex-direction:column; }}
     .hl-panel.hl-drop {{ border-left-color:var(--red); background:#FFF5F5; }}
     .hl-panel.hl-new  {{ border-left-color:var(--green); background:#F0FDF4; }}
     .hl-panel.hl-renew {{ border-left-color:var(--amber); background:#FFFBEB; }}
@@ -365,7 +365,9 @@ html = f"""<!DOCTYPE html>
     .hl-renew .hl-title {{ color:#92400E; }}
     .hl-main {{ font-size:16px; font-weight:800; color:var(--text); margin-bottom:4px; }}
     .hl-sub  {{ font-size:11px; color:var(--muted); }}
-    .hl-list {{ list-style:none; margin-top:6px; }}
+    .hl-list {{ list-style:none; margin-top:6px; max-height:110px; overflow-y:auto; flex:1; scrollbar-width:thin; scrollbar-color:rgba(0,0,0,.15) transparent; }}
+    .hl-list::-webkit-scrollbar {{ width:4px; }}
+    .hl-list::-webkit-scrollbar-thumb {{ background:rgba(0,0,0,.15); border-radius:4px; }}
     .hl-list li {{ font-size:11px; padding:3px 0; color:var(--text); border-bottom:1px solid rgba(0,0,0,.04); display:flex; align-items:center; gap:6px; }}
     .hl-list li:last-child {{ border-bottom:none; }}
     .kpi-row {{ display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:18px; }}
@@ -437,7 +439,7 @@ html = f"""<!DOCTYPE html>
   </div>
   <div style="display:flex;gap:10px;align-items:center">
     <div class="pill">Evinced Analytics</div>
-    <div class="pill green">● Live — BigQuery + HubSpot</div>
+    <div class="pill green">BigQuery · HubSpot · Zendesk</div>
   </div>
 </header>
 <div class="status-bar">
@@ -449,16 +451,6 @@ html = f"""<!DOCTYPE html>
 </div>
 
 <div class="main">
-  <div class="note-bar">
-    <strong>Data from BigQuery + HubSpot.</strong>&nbsp;
-    <strong>{len(ext_tenants)} active external tenants</strong> ·
-    <strong>{unique_users} active users</strong> ·
-    <strong>{total_scans:,} scans (last 14d)</strong>.&nbsp;
-    <span style="color:#1E40AF">🟢 New tenant</span> = HubSpot deal closed this month ·
-    <span style="color:#92400E">🟡 Renewal</span> = deal ending Apr–May 2026 ·
-    <span style="color:#991B1B">🔴 Drop</span> = biggest scan drop vs. prior period
-  </div>
-
   <!-- FILTERS -->
   <div class="filters-card">
     <div class="filters-header">
@@ -1038,12 +1030,21 @@ function applyFilters() {{
     }}
   }});
 
+  // Per-tenant ticket counts filtered by current date range
+  const zdCountByTenant = {{}};
+  ZD_TICKETS.forEach(t => {{
+    if (!t.date || t.date < startDate || t.date > endDate) return;
+    if (noWeekends && isWeekend(t.date)) return;
+    const org = t.organization || '';
+    if (org) zdCountByTenant[org] = (zdCountByTenant[org]||0) + 1;
+  }});
+
   // Re-aggregate account rows from filteredDaily
   const acctMap = {{}};
   filteredDaily.forEach(r => {{
     if (!acctMap[r.tenantName]) {{
       const m = ACCT_META[r.tenantName] || {{}};
-      const zdCount = ZD_TENANT_COUNTS[r.tenantName] || 0;
+      const zdCount = zdCountByTenant[r.tenantName] || 0;
       acctMap[r.tenantName] = {{
         tenantName:     r.tenantName,
         total_scans:    0,
@@ -1052,7 +1053,7 @@ function applyFilters() {{
         se:             r.se             || '—',
         tam:            m.tam            || '—',
         tickets_month:  m.tickets_month  || 0,
-        zd_tickets:     zdCount || m.tickets_all || 0,
+        zd_tickets:     zdCount,
         contract_start: m.contract_start || '—',
         contract_end:   m.contract_end   || '—',
         is_internal:    r.isInternal,
