@@ -958,6 +958,7 @@ let filteredDaily    = [...DAILY_ROWS];
 let filteredDetail   = [...DETAIL_ROWS];
 let filteredAccounts = [...ACCOUNT_ROWS];
 let dropTenant = null; // tenant name with biggest scan drop
+let zdCountByTenantFiltered = {{}}; // date-filtered ticket counts, updated in applyFilters
 
 // ── Update charts ──────────────────────────────────────────────────────────────
 function updateCharts() {{
@@ -1048,12 +1049,12 @@ function applyFilters() {{
   }});
 
   // Per-tenant ticket counts filtered by current date range
-  const zdCountByTenant = {{}};
+  zdCountByTenantFiltered = {{}};
   ZD_TICKETS.forEach(t => {{
     if (!t.date || t.date < startDate || t.date > endDate) return;
     if (noWeekends && isWeekend(t.date)) return;
     const org = t.organization || '';
-    if (org) zdCountByTenant[org] = (zdCountByTenant[org]||0) + 1;
+    if (org) zdCountByTenantFiltered[org] = (zdCountByTenantFiltered[org]||0) + 1;
   }});
 
   // Re-aggregate account rows from filteredDaily
@@ -1061,7 +1062,6 @@ function applyFilters() {{
   filteredDaily.forEach(r => {{
     if (!acctMap[r.tenantName]) {{
       const m = ACCT_META[r.tenantName] || {{}};
-      const zdCount = zdCountByTenant[r.tenantName] || 0;
       acctMap[r.tenantName] = {{
         tenantName:     r.tenantName,
         total_scans:    0,
@@ -1070,7 +1070,7 @@ function applyFilters() {{
         se:             r.se             || '—',
         tam:            m.tam            || '—',
         tickets_month:  m.tickets_month  || 0,
-        zd_tickets:     zdCount,
+        zd_tickets:     zdCountByTenantFiltered[r.tenantName] || 0,
         contract_start: m.contract_start || '—',
         contract_end:   m.contract_end   || '—',
         is_internal:    r.isInternal,
@@ -1081,6 +1081,29 @@ function applyFilters() {{
     }}
     acctMap[r.tenantName].total_scans += r.scans;
   }});
+
+  // Add tenants that have tickets in the period but no scan activity (so they don't disappear)
+  Object.entries(zdCountByTenantFiltered).forEach(([org, zdCount]) => {{
+    if (acctMap[org]) return; // already in table
+    const m = ACCT_META[org] || {{}};
+    acctMap[org] = {{
+      tenantName:     org,
+      total_scans:    0,
+      latest_scan:    m.latest_scan    || '—',
+      owner:          m.owner          || '—',
+      se:             m.se             || '—',
+      tam:            m.tam            || '—',
+      tickets_month:  m.tickets_month  || 0,
+      zd_tickets:     zdCount,
+      contract_start: m.contract_start || '—',
+      contract_end:   m.contract_end   || '—',
+      is_internal:    false,
+      is_new:         m.is_new         || false,
+      renewal:        m.renewal        || null,
+      prev_scans:     0,
+    }};
+  }});
+
   filteredAccounts = Object.values(acctMap).filter(r => !minTickets || r.zd_tickets >= minTickets);
 
   // Detail table: aggregate RAW_USER_ROWS filtered by all active filters incl. date
@@ -1143,17 +1166,17 @@ function updateKPIs(startDate, endDate) {{
   document.getElementById('k-users').textContent   = userSet.size;
   document.getElementById('k-scans').textContent   = scans.toLocaleString();
 
-  // Support tickets KPI — reflect selected tenant if filtered
+  // Support tickets KPI — date-filtered, reflects selected tenant
   const selTenant = document.getElementById('f-tenant').value;
   const zdCount = selTenant !== 'all'
-    ? (ZD_TENANT_COUNTS[selTenant] || 0)
-    : Object.values(ZD_TENANT_COUNTS).reduce((a,b)=>a+b,0);
+    ? (zdCountByTenantFiltered[selTenant] || 0)
+    : Object.values(zdCountByTenantFiltered).reduce((a,b)=>a+b,0);
   const kTickets = document.getElementById('k-tickets');
   if (kTickets) kTickets.textContent = zdCount;
   const kTicketsSub = document.getElementById('k-tickets-sub');
   if (kTicketsSub) kTicketsSub.textContent = selTenant !== 'all'
-    ? 'Zendesk · ' + selTenant + ' · all time'
-    : 'Zendesk · mobile/MFA · all time';
+    ? 'Zendesk · ' + selTenant + ' · ' + startDate + ' – ' + endDate
+    : 'Zendesk · mobile/MFA · ' + startDate + ' – ' + endDate;
 
   const rangeLabel = startDate + ' – ' + endDate;
   const sub1 = document.getElementById('k-tenants-sub');
