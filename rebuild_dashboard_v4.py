@@ -118,11 +118,13 @@ HUBSPOT = {
     "Zalando":              {"owner": "—",               "se": "—",                "tam": "—",             "is_new": False, "renewal": None,         "tickets_all": 0,  "tickets_month": 0, "stage": "Customer",  "contract_end": None},
 }
 
-# ── Exclude expired non-customers ──────────────────────────────────────────────
+# ── Exclude tenants that are not active customers ──────────────────────────────
+# Keep only: stage == "Customer" AND (contract_end is None OR contract_end >= today)
 _today = _date.today().isoformat()
 EXCLUDED_TENANTS = {
     name for name, v in HUBSPOT.items()
-    if v.get("contract_end") and v["contract_end"] < _today and v.get("stage", "Customer") != "Customer"
+    if v.get("stage", "Customer") != "Customer"
+    or (v.get("contract_end") and v["contract_end"] < _today)
 }
 
 # ── Zendesk — live data ────────────────────────────────────────────────────────
@@ -319,6 +321,7 @@ html = f"""<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mobile Products Dashboard | Evinced</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
   <style>
     *, *::before, *::after {{ box-sizing:border-box; margin:0; padding:0; }}
     :root {{
@@ -436,36 +439,17 @@ html = f"""<!DOCTYPE html>
   </div>
   <div style="display:flex;gap:10px;align-items:center">
     <div class="pill">Evinced Analytics</div>
-    <div class="pill green">● Live — BigQuery + HubSpot</div>
-    <a href="/mobile-products-dashboard.pdf" target="_blank"
-       style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);border-radius:20px;padding:4px 14px;font-size:11px;font-weight:500;color:#fff;text-decoration:none;white-space:nowrap;">
-      ⬇ Export PDF
-    </a>
-    <button onclick="exportAllCSV()"
+    <button onclick="window.print()"
        style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);border-radius:20px;padding:4px 14px;font-size:11px;font-weight:500;color:#fff;cursor:pointer;font-family:inherit;white-space:nowrap;">
-      ⬇ Export CSV
+      ⬇ Export PDF
     </button>
   </div>
 </header>
 <div class="status-bar">
-  <div class="status-bar-left">
-    <span><span class="dot dot-live"></span>BigQuery: 90-day history · production</span>
-    <span><span class="dot dot-live"></span>HubSpot: Owner / SE / TAM · tickets</span>
-  </div>
-  <span class="status-updated">Last updated: {LAST_UPDATED}</span>
+  <span class="status-updated" style="margin-left:auto">Last updated: {LAST_UPDATED}</span>
 </div>
 
 <div class="main">
-  <div class="note-bar">
-    <strong>Data from BigQuery + HubSpot.</strong>&nbsp;
-    <strong>{len(ext_tenants)} active external tenants</strong> ·
-    <strong>{unique_users} active users</strong> ·
-    <strong>{total_scans:,} scans (last 14d)</strong>.&nbsp;
-    <span style="color:#1E40AF">🟢 New tenant</span> = HubSpot deal closed this month ·
-    <span style="color:#92400E">🟡 Renewal</span> = deal ending Apr–May 2026 ·
-    <span style="color:#991B1B">🔴 Drop</span> = biggest scan drop vs. prior period
-  </div>
-
   <!-- FILTERS -->
   <div class="filters-card">
     <div class="filters-header">
@@ -570,14 +554,14 @@ html = f"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- CHARTS: row 2 — Zendesk Severity · Zendesk by Product · SDK Type + Platform -->
+  <!-- CHARTS: row 2 — Dynamic · Zendesk by Product · SDK Type + Platform -->
   <div class="charts-grid">
-    <div class="chart-card">
+    <div class="chart-card" id="card-dynamic" style="display:none">
       <div class="chart-header"><div>
-        <div class="chart-title">Zendesk by Severity</div>
-        <span class="chart-source" id="zd-sev-source">Zendesk · filtered by date</span>
+        <div class="chart-title" id="dynamic-chart-title">—</div>
+        <span class="chart-source" id="dynamic-chart-source">BigQuery · selected range</span>
       </div></div>
-      <div class="chart-wrap"><canvas id="ch-zd-severity"></canvas></div>
+      <div class="chart-wrap"><canvas id="ch-dynamic"></canvas></div>
     </div>
     <div class="chart-card">
       <div class="chart-header"><div>
@@ -675,6 +659,28 @@ const DATA_END      = {json.dumps(data_end)};
 
 const PER_PAGE = 10;
 
+// Register datalabels plugin globally
+Chart.register(ChartDataLabels);
+
+// ── Datalabel config helpers ───────────────────────────────────────────────────
+function dlPie() {{
+  return {{
+    formatter: (v, ctx) => {{
+      const sum = ctx.dataset.data.reduce((a,b)=>a+b,0);
+      const pct = sum>0 ? Math.round(v/sum*100) : 0;
+      return pct >= 5 ? pct+'%' : '';
+    }},
+    color: '#fff', font: {{ size: 10, weight: 'bold' }}
+  }};
+}}
+function dlBar(horizontal) {{
+  return {{
+    anchor: 'end', align: horizontal ? 'start' : 'end', offset: horizontal ? -4 : 2,
+    formatter: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : String(v),
+    color: '#64748B', font: {{ size: 9 }}
+  }};
+}}
+
 // ACCT_META for static HubSpot-sourced fields
 const ACCT_META = {{}};
 ACCOUNT_ROWS.forEach(r => {{ ACCT_META[r.tenantName] = r; }});
@@ -739,15 +745,6 @@ function updateZendeskCharts(startDate, endDate, noWeekends) {{
   const ZD_TYPE_COLORS = ['#6D28D9','#3B82F6','#0D9488'];
   const CC2 = ['#6D28D9','#3B82F6','#0D9488','#F59E0B','#EF4444','#10B981'];
 
-  if (CHARTS.zdSeverity) {{
-    const labels = sevEntries.map(([k])=>k);
-    const values = sevEntries.map(([,v])=>v);
-    CHARTS.zdSeverity.data.labels   = labels;
-    CHARTS.zdSeverity.data.datasets[0].data = values;
-    CHARTS.zdSeverity.data.datasets[0].backgroundColor = labels.map(l=>(ZD_SEV_COLORS[l]||'#94A3B8')+'CC');
-    CHARTS.zdSeverity.data.datasets[0].borderColor     = labels.map(l=> ZD_SEV_COLORS[l]||'#94A3B8');
-    CHARTS.zdSeverity.update();
-  }}
   if (CHARTS.tickets) {{
     const typeEntries = Object.entries(typeAgg).sort((a,b)=>b[1]-a[1]);
     CHARTS.tickets.data.labels = typeEntries.map(([k])=>k);
@@ -762,6 +759,84 @@ function updateZendeskCharts(startDate, endDate, noWeekends) {{
   const sl = document.getElementById('zd-section-label'); if(sl) sl.textContent = 'mobile/MFA · ' + src;
   const ss = document.getElementById('zd-sev-source');   if(ss) ss.textContent = 'Zendesk · ' + src;
   const ts = document.getElementById('zd-type-source');  if(ts) ts.textContent = 'Zendesk · ' + src;
+}}
+
+function updateDynamicChart(product) {{
+  const card    = document.getElementById('card-dynamic');
+  const title   = document.getElementById('dynamic-chart-title');
+  const src     = document.getElementById('dynamic-chart-source');
+  const sdkTvCard = document.getElementById('card-sdk-tv');
+  if (!card) return;
+
+  if (product === 'mfa') {{
+    // Slot 1 (dynamic): Platform / OS Distribution — pie
+    card.style.display = '';
+    title.textContent  = 'Platform / OS Distribution';
+    src.textContent    = 'BigQuery · MFA scans by OS';
+    const platAgg = {{}};
+    filteredDaily.forEach(r => {{ if (r.sdkType === 'MFA') platAgg[r.platform||'Unknown'] = (platAgg[r.platform||'Unknown']||0) + r.scans; }});
+    const platEntries = Object.entries(platAgg).sort((a,b)=>b[1]-a[1]);
+    CHARTS.dynamic.config.type = 'pie';
+    CHARTS.dynamic.data.labels = platEntries.map(([k])=>k);
+    CHARTS.dynamic.data.datasets[0].data = platEntries.map(([,v])=>v);
+    CHARTS.dynamic.data.datasets[0].backgroundColor = platEntries.map((_,i)=>CC[i%CC.length]+'CC');
+    CHARTS.dynamic.data.datasets[0].borderColor      = platEntries.map((_,i)=>CC[i%CC.length]);
+    CHARTS.dynamic.options.indexAxis = undefined;
+    CHARTS.dynamic.options.plugins.datalabels = dlPie();
+    CHARTS.dynamic.update();
+
+    // Slot 3 (sdk-tv): MFA Scans by Top Tenants — bar
+    if (sdkTvCard) sdkTvCard.style.display = '';
+    const tenantAgg = {{}};
+    filteredDaily.forEach(r => {{ if (r.sdkType === 'MFA' && !r.isInternal) tenantAgg[r.tenantName] = (tenantAgg[r.tenantName]||0) + r.scans; }});
+    const tenantEntries = Object.entries(tenantAgg).sort((a,b)=>b[1]-a[1]).slice(0,12);
+    // Update card-sdk-tv title
+    const sdkTvTitle = sdkTvCard ? sdkTvCard.querySelector('.chart-title') : null;
+    const sdkTvSrc   = sdkTvCard ? sdkTvCard.querySelector('.chart-source') : null;
+    if (sdkTvTitle) sdkTvTitle.textContent = 'MFA Scans by Top Tenants';
+    if (sdkTvSrc)   sdkTvSrc.textContent   = 'BigQuery · MFA scans · top 12 tenants';
+    CHARTS.sdkTV.config.type = 'bar';
+    CHARTS.sdkTV.data.labels = tenantEntries.map(([k])=>k);
+    CHARTS.sdkTV.data.datasets[0].data = tenantEntries.map(([,v])=>v);
+    CHARTS.sdkTV.data.datasets[0].backgroundColor = tenantEntries.map((_,i)=>CC[i%CC.length]+'BB');
+    CHARTS.sdkTV.data.datasets[0].borderColor      = tenantEntries.map((_,i)=>CC[i%CC.length]);
+    CHARTS.sdkTV.options.indexAxis = 'y';
+    CHARTS.sdkTV.options.plugins.datalabels = dlBar(true);
+    CHARTS.sdkTV.update();
+
+  }} else if (product === 'sdk') {{
+    // Slot 1 (dynamic): SDK Breakdown by Top Tenants — bar
+    card.style.display = '';
+    title.textContent  = 'SDK Breakdown by Top Tenants';
+    src.textContent    = 'BigQuery · top tenants by scan count';
+    const agg = {{}};
+    filteredDaily.forEach(r => {{ if (r.sdkType !== 'MFA' && !r.isInternal) agg[r.tenantName] = (agg[r.tenantName]||0) + r.scans; }});
+    const entries = Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,12);
+    CHARTS.dynamic.config.type = 'bar';
+    CHARTS.dynamic.data.labels = entries.map(([k])=>k);
+    CHARTS.dynamic.data.datasets[0].data = entries.map(([,v])=>v);
+    CHARTS.dynamic.data.datasets[0].backgroundColor = entries.map((_,i)=>CC[i%CC.length]+'BB');
+    CHARTS.dynamic.data.datasets[0].borderColor      = entries.map((_,i)=>CC[i%CC.length]);
+    CHARTS.dynamic.options.indexAxis = 'y';
+    CHARTS.dynamic.options.plugins.datalabels = dlBar(true);
+    CHARTS.dynamic.update();
+
+    // Slot 3: restore SDK Type + Platform
+    if (sdkTvCard) sdkTvCard.style.display = '';
+    const sdkTvTitle = sdkTvCard ? sdkTvCard.querySelector('.chart-title') : null;
+    const sdkTvSrc   = sdkTvCard ? sdkTvCard.querySelector('.chart-source') : null;
+    if (sdkTvTitle) sdkTvTitle.textContent = 'SDK Type + Platform';
+    if (sdkTvSrc)   sdkTvSrc.textContent   = 'BigQuery · os_name as variant';
+
+  }} else {{
+    // All products — hide dynamic slot, restore SDK+Platform
+    card.style.display = 'none';
+    if (sdkTvCard) sdkTvCard.style.display = '';
+    const sdkTvTitle = sdkTvCard ? sdkTvCard.querySelector('.chart-title') : null;
+    const sdkTvSrc   = sdkTvCard ? sdkTvCard.querySelector('.chart-source') : null;
+    if (sdkTvTitle) sdkTvTitle.textContent = 'SDK Type + Platform';
+    if (sdkTvSrc)   sdkTvSrc.textContent   = 'BigQuery · os_name as variant';
+  }}
 }}
 
 function getDateRange() {{
@@ -801,7 +876,7 @@ function mkLine(id, label, color, labels, data) {{
     data: {{ labels, datasets:[{{ label, data, borderColor:color, backgroundColor:color+'22', borderWidth:2, pointRadius:3, tension:0.3, fill:true }}] }},
     options: {{
       responsive: true, maintainAspectRatio: false,
-      plugins: {{ legend:{{display:false}}, tooltip:{{ backgroundColor:'#1E293B', bodyFont:{{size:11}}, padding:8, cornerRadius:6 }} }},
+      plugins: {{ datalabels:{{display:false}}, legend:{{display:false}}, tooltip:{{ backgroundColor:'#1E293B', bodyFont:{{size:11}}, padding:8, cornerRadius:6 }} }},
       scales: {{
         x: {{ grid:{{display:false}}, ticks:{{font:{{size:9}}, color:'#94A3B8', maxTicksLimit:12}} }},
         y: {{ grid:{{color:'#F1F5F9'}}, ticks:{{font:{{size:10}}, color:'#94A3B8'}}, beginAtZero:true }}
@@ -844,7 +919,8 @@ function initCharts() {{
                backgroundColor: SDK_TYPE_PIE.map((_,i)=>CC[i%CC.length]+'CC'),
                borderColor:     SDK_TYPE_PIE.map((_,i)=>CC[i%CC.length]), borderWidth:2 }}] }},
     options: {{ responsive:true, maintainAspectRatio:false,
-      plugins: {{ legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
+      plugins: {{ datalabels: dlPie(),
+        legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
         tooltip:{{callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed.toLocaleString()+' scans'}}}} }} }}
   }});
 
@@ -856,25 +932,27 @@ function initCharts() {{
                backgroundColor: SDK_TV_LIST.map((_,i)=>CC[i%CC.length]+'BB'),
                borderColor:     SDK_TV_LIST.map((_,i)=>CC[i%CC.length]), borderWidth:1 }}] }},
     options: {{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins: {{ legend:{{display:false}}, tooltip:{{backgroundColor:'#1E293B',callbacks:{{label:ctx=>' '+ctx.parsed.x.toLocaleString()+' scans'}}}} }},
+      plugins: {{ datalabels: dlBar(true), legend:{{display:false}},
+        tooltip:{{backgroundColor:'#1E293B',callbacks:{{label:ctx=>' '+ctx.parsed.x.toLocaleString()+' scans'}}}} }},
       scales: {{ x:{{grid:{{color:'#F1F5F9'}},ticks:{{font:{{size:9}},color:'#94A3B8'}},beginAtZero:true}},
                  y:{{grid:{{display:false}},ticks:{{font:{{size:9}},color:'#64748B'}}}} }} }}
   }});
 
-  // Zendesk charts — initialized empty; applyFilters() will populate them with the correct date range
-  const ZD_SEV_COLORS_INIT = {{'Normal':'#3B82F6','Low':'#10B981','High':'#F59E0B','Urgent':'#EF4444','Critical':'#DC2626'}};
-  CHARTS.zdSeverity = new Chart(document.getElementById('ch-zd-severity'), {{
+  // Dynamic chart — MFA platform distribution (pie) or SDK/MFA top tenants (bar)
+  CHARTS.dynamic = new Chart(document.getElementById('ch-dynamic'), {{
     type: 'pie',
     data: {{ labels: [], datasets: [{{ data: [], backgroundColor: [], borderColor: [], borderWidth: 2 }}] }},
     options: {{ responsive:true, maintainAspectRatio:false,
-      plugins: {{ legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
-        tooltip:{{callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed+' ticket'+(ctx.parsed!==1?'s':'')}}}} }} }}
+      plugins: {{ datalabels: dlPie(),
+        legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
+        tooltip:{{callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed.toLocaleString()+' scans'}}}} }} }}
   }});
   CHARTS.tickets = new Chart(document.getElementById('ch-tickets'), {{
     type: 'doughnut',
     data: {{ labels: [], datasets: [{{ data: [], backgroundColor: [], borderColor: [], borderWidth: 2 }}] }},
     options: {{ responsive:true, maintainAspectRatio:false, cutout:'55%',
-      plugins: {{ legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
+      plugins: {{ datalabels: dlPie(),
+        legend:{{position:'bottom',labels:{{font:{{size:9}},padding:8,boxWidth:10}}}},
         tooltip:{{backgroundColor:'#1E293B',callbacks:{{label:ctx=>' '+ctx.label+': '+ctx.parsed+' ticket'+(ctx.parsed!==1?'s':'')}}}} }} }}
   }});
 }}
@@ -1024,9 +1102,8 @@ function applyFilters() {{
     return {{ tenantName: r.tenantName, userId: r.userId, sdkTypes: types, sdkType: types.join(', '), scans: r.scans, se: r.se, is_internal: r.is_internal }};
   }});
 
-  // Hide SDK Type + Platform chart when filtering on MFA only
-  const sdkTvCard = document.getElementById('card-sdk-tv');
-  if (sdkTvCard) sdkTvCard.style.display = (product === 'mfa') ? 'none' : '';
+  // Update dynamic chart (handles card-sdk-tv visibility too)
+  updateDynamicChart(product);
 
   detPage = 0; acctPage = 0;
   updateKPIs(startDate, endDate);
