@@ -789,7 +789,7 @@ function updateDynamicChart(product) {{
     if (sdkTvCard) sdkTvCard.style.display = '';
     const tenantAgg = {{}};
     filteredDaily.forEach(r => {{ if (r.sdkType === 'MFA' && !r.isInternal) tenantAgg[r.tenantName] = (tenantAgg[r.tenantName]||0) + r.scans; }});
-    const tenantEntries = Object.entries(tenantAgg).sort((a,b)=>b[1]-a[1]).slice(0,12);
+    const tenantEntries = Object.entries(tenantAgg).sort((a,b)=>b[1]-a[1]).slice(0,5);
     // Update card-sdk-tv title
     const sdkTvTitle = sdkTvCard ? sdkTvCard.querySelector('.chart-title') : null;
     const sdkTvSrc   = sdkTvCard ? sdkTvCard.querySelector('.chart-source') : null;
@@ -811,7 +811,7 @@ function updateDynamicChart(product) {{
     src.textContent    = 'BigQuery · top tenants by scan count';
     const agg = {{}};
     filteredDaily.forEach(r => {{ if (r.sdkType !== 'MFA' && !r.isInternal) agg[r.tenantName] = (agg[r.tenantName]||0) + r.scans; }});
-    const entries = Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,12);
+    const entries = Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,5);
     CHARTS.dynamic.config.type = 'bar';
     CHARTS.dynamic.data.labels = entries.map(([k])=>k);
     CHARTS.dynamic.data.datasets[0].data = entries.map(([,v])=>v);
