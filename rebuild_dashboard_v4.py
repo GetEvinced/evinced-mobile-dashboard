@@ -205,6 +205,28 @@ for r in daily_90d:
     sdk_tv_agg[key] += r["scans"]
 SDK_TV_LIST = [{"label": k, "scans": v} for k, v in sorted(sdk_tv_agg.items(), key=lambda x: -x[1]) if v > 0]
 
+# ── SDK breakdown by top tenants (stacked bar) ────────────────────────────────
+# Top 12 tenants by total scans (excl. internals), then per SDK type breakdown
+_INTERNALS_SET = {"Evinced Demo Account", "Evinced Dev Team"}
+_tenant_total = defaultdict(int)
+_tenant_sdk   = defaultdict(lambda: defaultdict(int))
+for r in daily_90d:
+    if r["tenantName"] in _INTERNALS_SET:
+        continue
+    _tenant_total[r["tenantName"]] += r["scans"]
+    _tenant_sdk[r["tenantName"]][r["sdkType"]] += r["scans"]
+
+_top_tenants = [t for t, _ in sorted(_tenant_total.items(), key=lambda x: -x[1])[:12]]
+_all_sdks    = sorted(set(r["sdkType"] for r in daily_90d))
+SDK_BY_TENANT = {
+    "tenants": _top_tenants,
+    "sdkTypes": _all_sdks,
+    "series": [
+        {"sdkType": sdk, "data": [_tenant_sdk[t].get(sdk, 0) for t in _top_tenants]}
+        for sdk in _all_sdks
+    ]
+}
+
 # ── Detail rows (user-level, last 14 days) ────────────────────────────────────
 det_agg = defaultdict(lambda: {"scans": 0, "sdkTypes": set()})
 for r in rows:
@@ -300,8 +322,9 @@ raw_user_rows_js = json.dumps(raw_user_rows)
 # ── JS blobs ───────────────────────────────────────────────────────────────────
 detail_rows_js  = json.dumps(detail_rows)
 account_rows_js = json.dumps(account_rows)
-sdk_type_pie_js = json.dumps(SDK_TYPE_PIE)
-sdk_tv_js       = json.dumps(SDK_TV_LIST)
+sdk_type_pie_js  = json.dumps(SDK_TYPE_PIE)
+sdk_tv_js        = json.dumps(SDK_TV_LIST)
+sdk_by_tenant_js = json.dumps(SDK_BY_TENANT)
 daily_rows_js   = json.dumps(daily_rows)
 date_keys_js    = json.dumps(all_dates)
 date_labels_js  = json.dumps(date_labels)
@@ -535,12 +558,12 @@ html = f"""<!DOCTYPE html>
   <!-- HIGHLIGHTS -->
   <div class="highlights-card">
     <div class="hl-panel hl-drop">
-      <div class="hl-title">📉 Biggest Scan Drop vs. Prev Period</div>
+      <div class="hl-title">📉 Biggest Scan Drop vs. Prev Period<span id="hl-drop-range" style="font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px;opacity:.7"></span></div>
       <div class="hl-main" id="hl-drop-tenant">—</div>
       <div class="hl-sub"  id="hl-drop-detail">Computed from selected date range</div>
     </div>
     <div class="hl-panel hl-new">
-      <div class="hl-title">🟢 New Tenants</div>
+      <div class="hl-title">🟢 New Tenants<span id="hl-new-range" style="font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px;opacity:.7"></span></div>
       <ul class="hl-list" id="hl-new-list">
         {"".join(f"<li>✦ {t}</li>" for t in new_tenants) or "<li style='color:var(--faint)'>None this period</li>"}
       </ul>
@@ -598,6 +621,17 @@ html = f"""<!DOCTYPE html>
     <div class="chart-card">
       <div class="chart-header"><div><div class="chart-title">SDK Type + Platform</div><span class="chart-source">BigQuery · os_name as variant</span></div></div>
       <div class="chart-wrap"><canvas id="ch-sdk-tv"></canvas></div>
+    </div>
+  </div>
+
+  <!-- CHARTS: row 3 — SDK Breakdown by Top Tenants -->
+  <div class="charts-grid" style="grid-template-columns:1fr">
+    <div class="chart-card">
+      <div class="chart-header"><div>
+        <div class="chart-title">SDK Breakdown by Top Tenants</div>
+        <span class="chart-source">BigQuery · top 12 tenants by scan volume · 90 days</span>
+      </div></div>
+      <div class="chart-wrap" style="height:320px"><canvas id="ch-sdk-by-tenant"></canvas></div>
     </div>
   </div>
 
@@ -677,6 +711,7 @@ const DATE_KEYS     = {date_keys_js};
 const DATE_LABELS   = {date_labels_js};
 const SDK_TYPE_PIE  = {sdk_type_pie_js};
 const SDK_TV_LIST   = {sdk_tv_js};
+const SDK_BY_TENANT = {sdk_by_tenant_js};
 const DETAIL_ROWS      = {detail_rows_js};
 const RAW_USER_ROWS    = {raw_user_rows_js};
 const ACCOUNT_ROWS     = {account_rows_js};
@@ -927,6 +962,34 @@ function initCharts() {{
       plugins: {{ legend:{{display:false}}, tooltip:{{backgroundColor:'#1E293B',callbacks:{{label:ctx=>' '+ctx.parsed.x.toLocaleString()+' scans'}}}} }},
       scales: {{ x:{{grid:{{color:'#F1F5F9'}},ticks:{{font:{{size:9}},color:'#94A3B8'}},beginAtZero:true}},
                  y:{{grid:{{display:false}},ticks:{{font:{{size:9}},color:'#64748B'}}}} }} }}
+  }});
+
+  // SDK Breakdown by Top Tenants — stacked horizontal bar
+  CHARTS.sdkByTenant = new Chart(document.getElementById('ch-sdk-by-tenant'), {{
+    type: 'bar',
+    data: {{
+      labels: SDK_BY_TENANT.tenants,
+      datasets: SDK_BY_TENANT.series.map((s, i) => ({{
+        label: s.sdkType,
+        data:  s.data,
+        backgroundColor: CC[i % CC.length] + 'CC',
+        borderColor:     CC[i % CC.length],
+        borderWidth: 1,
+      }}))
+    }},
+    options: {{
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: {{
+        legend: {{ position:'right', labels:{{ font:{{size:9}}, padding:10, boxWidth:12 }} }},
+        tooltip: {{ backgroundColor:'#1E293B', callbacks: {{
+          label: ctx => ' ' + ctx.dataset.label + ': ' + ctx.parsed.x.toLocaleString() + ' scans'
+        }} }}
+      }},
+      scales: {{
+        x: {{ stacked:true, grid:{{color:'#F1F5F9'}}, ticks:{{font:{{size:9}},color:'#94A3B8'}}, beginAtZero:true }},
+        y: {{ stacked:true, grid:{{display:false}}, ticks:{{font:{{size:9}},color:'#64748B'}} }}
+      }}
+    }}
   }});
 
   // Zendesk charts — initialized empty; applyFilters() will populate with correct date range
@@ -1189,6 +1252,12 @@ function updateKPIs(startDate, endDate) {{
 
 // ── Highlights — time-aware ───────────────────────────────────────────────────
 function updateHighlights(startDate, endDate) {{
+  const rangeLabel = startDate + ' – ' + endDate;
+  const dropRangeEl = document.getElementById('hl-drop-range');
+  const newRangeEl  = document.getElementById('hl-new-range');
+  if (dropRangeEl) dropRangeEl.textContent = '· ' + rangeLabel;
+  if (newRangeEl)  newRangeEl.textContent  = '· ' + rangeLabel;
+
   // ── Biggest drop ──
   const tenantEl = document.getElementById('hl-drop-tenant');
   const detailEl = document.getElementById('hl-drop-detail');
